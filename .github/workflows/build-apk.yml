@@ -16,7 +16,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
 
     - name: Setup Java
       uses: actions/setup-java@v4
@@ -27,49 +27,40 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Install Cordova
-      run: npm install -g cordova
+    - name: Accept Android SDK licenses
+      run: yes | sdkmanager --licenses || true
 
-    - name: Create Cordova project
+    - name: Install Cordova
+      run: npm install -g cordova@12
+
+    - name: Create Cordova project and copy files
       run: |
         cordova create object-finder com.objectfinder.app "Object Finder"
-        cd object-finder
 
         # Copy web files
-        cp -f ../index.html www/
-        cp -f ../style.css www/
-        cp -f ../app.js www/
-        cp -f ../manifest.json www/ || true
-        cp -f ../icon-*.png www/ || true
+        cp -f index.html object-finder/www/
+        cp -f style.css object-finder/www/
+        cp -f app.js object-finder/www/
 
-    - name: Add Android platform
-      run: |
-        cd object-finder
-        cordova platform add android@latest
+        echo "Files copied successfully"
+        ls -la object-finder/www/
 
-    - name: Configure Android permissions
+    - name: Configure config.xml
       run: |
-        cd object-finder
-        cat > config.xml << 'EOF'
+        cat > object-finder/config.xml << 'EOF'
         <?xml version='1.0' encoding='utf-8'?>
         <widget id="com.objectfinder.app" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
             <name>Object Finder</name>
             <description>Aplicación localizadora de objetos con giroscopio</description>
-            <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
-                Object Finder Team
-            </author>
+            <author email="support@objectfinder.app">Object Finder Team</author>
             <content src="index.html" />
-            <allow-intent href="http://*/*" />
-            <allow-intent href="https://*/*" />
 
             <preference name="orientation" value="portrait" />
-            <preference name="fullscreen" value="false" />
-            <preference name="DisallowOverscroll" value="true" />
             <preference name="BackgroundColor" value="0xff1e3c72" />
 
             <platform name="android">
                 <preference name="android-minSdkVersion" value="24" />
-                <preference name="android-targetSdkVersion" value="34" />
+                <preference name="android-targetSdkVersion" value="33" />
 
                 <config-file target="AndroidManifest.xml" parent="/*">
                     <uses-permission android:name="android.permission.VIBRATE" />
@@ -79,50 +70,86 @@ jobs:
             </platform>
 
             <access origin="*" />
+            <allow-intent href="http://*/*" />
+            <allow-intent href="https://*/*" />
         </widget>
         EOF
 
-    - name: Build APK
+        echo "Config.xml created"
+        cat object-finder/config.xml
+
+    - name: Add Android platform
       run: |
         cd object-finder
-        cordova build android --release --verbose
+        cordova platform add android@12
+        echo "Android platform added"
 
-    - name: Find and rename APK
+    - name: Build APK (Debug)
       run: |
         cd object-finder
-        find platforms/android/app/build/outputs -name "*.apk" -type f
-        cp platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk ../object-finder.apk || \
-        cp platforms/android/app/build/outputs/apk/debug/app-debug.apk ../object-finder.apk
+        cordova build android --debug
+        echo "Build completed"
 
-    - name: Upload APK
+    - name: List generated APKs
+      run: |
+        echo "Looking for APKs..."
+        find object-finder/platforms/android/app/build/outputs -name "*.apk" -type f
+
+    - name: Copy APK
+      run: |
+        mkdir -p apk-output
+        cp object-finder/platforms/android/app/build/outputs/apk/debug/app-debug.apk apk-output/object-finder.apk
+        ls -lh apk-output/
+
+    - name: Upload APK as Artifact
       uses: actions/upload-artifact@v4
       with:
         name: object-finder-apk
-        path: object-finder.apk
-        retention-days: 30
+        path: apk-output/object-finder.apk
+        retention-days: 90
+
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
     - name: Create Release
-      if: github.ref == 'refs/heads/claude/gyroscope-object-finder-01ELkdGbedws5zpa34VPJ9FT'
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.0.0-${{ github.run_number }}
-        name: Object Finder v1.0.0 Build ${{ github.run_number }}
+        tag_name: build-${{ steps.date.outputs.date }}
+        name: Object Finder APK - Build ${{ steps.date.outputs.date }}
         body: |
-          ## 🎯 Object Finder APK
+          ## 🎯 Object Finder - Localizador de Objetos con Giroscopio
 
-          Aplicación localizadora de objetos con giroscopio.
+          **Build:** ${{ steps.date.outputs.date }}
+          **Commit:** ${{ github.sha }}
 
           ### 📱 Instalación:
-          1. Descarga el APK
-          2. Habilita "Instalar apps desconocidas" en tu móvil
-          3. Abre el APK y confirma la instalación
+          1. Descarga el archivo **object-finder.apk**
+          2. En tu móvil Android, habilita **"Instalar apps desconocidas"**:
+             - Ajustes → Seguridad → Orígenes desconocidos
+          3. Abre el APK descargado
+          4. Confirma la instalación
+          5. ¡Disfruta de tu Object Finder!
 
           ### ✨ Características:
-          - Detección por giroscopio
-          - Señal visual con barras y radar
-          - Pitidos de proximidad
-          - Configuración personalizable
-        files: object-finder.apk
+          - 📍 Detección por giroscopio
+          - 📊 Señal visual con barras y radar animado
+          - 🔊 Pitidos de proximidad
+          - ⚙️ Configuración personalizable
+          - 🎨 Interfaz moderna con efectos de neón
+
+          ### 🎮 Cómo usar:
+          1. Presiona el botón de encendido
+          2. Gira el dispositivo lentamente
+          3. La señal aumentará al acercarte al ángulo objetivo
+          4. ¡Escucha el pitido cuando lo encuentres!
+
+          ### ⚙️ Configuración:
+          - Toca el ícono ⚙️ para ajustar:
+            - Ángulo objetivo (0-360°)
+            - Tolerancia (±1-45°)
+            - Sensibilidad (Baja/Media/Alta)
+        files: apk-output/object-finder.apk
         draft: false
         prerelease: false
       env:
