@@ -1,12 +1,13 @@
-// Object Finder App - Multi-Mode Object Locator v2.2
+// Object Finder App - Multi-Mode Object Locator v2.3
 
 class ObjectFinder {
     constructor() {
         // Configuration
         this.config = {
-            detectionMode: 'rotation', // rotation, linear-horizontal, linear-vertical
+            detectionMode: 'rotation',
             targetAngle: 90,
-            targetSegment: 4, // Target segment for linear modes (1-15)
+            targetSegment: 4,
+            multiTarget: 1, // Number of detection positions
             tolerance: 10,
             sensitivity: 'medium'
         };
@@ -14,12 +15,15 @@ class ObjectFinder {
         // State
         this.isActive = false;
         this.currentAngle = 0;
-        this.currentSegment = 0; // Current segment for linear modes
+        this.currentSegment = 0;
         this.initialOrientation = null;
         this.signalStrength = 0;
         this.isBeeping = false;
+        this.foundTarget = false;
+        this.longPressTimer = null;
+        this.longPressDelay = 3000; // 3 seconds
 
-        // Audio Context for beeping
+        // Audio Context
         this.audioContext = null;
         this.beepInterval = null;
 
@@ -32,7 +36,7 @@ class ObjectFinder {
             powerButtonText: document.getElementById('powerButtonText'),
             statusText: document.getElementById('statusText'),
             signalStrength: document.getElementById('signalStrength'),
-            angleDisplay: document.getElementById('angleDisplay'),
+            wrongMark: document.getElementById('wrongMark'),
             bars: document.querySelectorAll('.bar'),
             radar: document.querySelector('.radar'),
             appTitle: document.getElementById('appTitle'),
@@ -40,6 +44,7 @@ class ObjectFinder {
             closeSettings: document.getElementById('closeSettings'),
             saveSettings: document.getElementById('saveSettings'),
             detectionMode: document.getElementById('detectionMode'),
+            multiTarget: document.getElementById('multiTarget'),
             targetAngle: document.getElementById('targetAngle'),
             targetAngleSlider: document.getElementById('targetAngleSlider'),
             angleValue: document.getElementById('angleValue'),
@@ -52,8 +57,7 @@ class ObjectFinder {
             sensitivity: document.getElementById('sensitivity'),
             permissionOverlay: document.getElementById('permissionOverlay'),
             requestPermission: document.getElementById('requestPermission'),
-            splashScreen: document.getElementById('splashScreen'),
-            touchArea: document.getElementById('touchArea')
+            splashScreen: document.getElementById('splashScreen')
         };
 
         // Load saved configuration
@@ -66,12 +70,9 @@ class ObjectFinder {
     init() {
         // Setup fullscreen mode (Cordova)
         document.addEventListener('deviceready', () => {
-            // Hide status bar completely
             if (typeof StatusBar !== 'undefined') {
                 StatusBar.hide();
             }
-
-            // Enable immersive fullscreen mode
             if (typeof AndroidFullScreen !== 'undefined') {
                 AndroidFullScreen.immersiveMode(
                     () => console.log('Immersive mode enabled'),
@@ -80,28 +81,47 @@ class ObjectFinder {
             }
         }, false);
 
-        // Hide splash screen after delay
+        // Hide splash screen
         setTimeout(() => {
             if (this.elements.splashScreen) {
                 this.elements.splashScreen.remove();
             }
         }, 2800);
 
-        // Event listeners
-        this.elements.powerButton.addEventListener('click', () => this.togglePower());
-        this.elements.appTitle.addEventListener('click', () => this.openSettings());
+        // Power button events
+        this.elements.powerButton.addEventListener('mousedown', () => this.handlePowerButtonDown());
+        this.elements.powerButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.handlePowerButtonDown();
+        });
+        this.elements.powerButton.addEventListener('mouseup', () => this.handlePowerButtonUp());
+        this.elements.powerButton.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.handlePowerButtonUp();
+        });
+        this.elements.powerButton.addEventListener('mouseleave', () => this.cancelLongPress());
+        this.elements.powerButton.addEventListener('touchcancel', () => this.cancelLongPress());
+
+        // Settings menu - long press on title (3 seconds)
+        this.elements.appTitle.addEventListener('mousedown', () => this.startSettingsLongPress());
+        this.elements.appTitle.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.startSettingsLongPress();
+        });
+        this.elements.appTitle.addEventListener('mouseup', () => this.cancelSettingsLongPress());
+        this.elements.appTitle.addEventListener('touchend', () => this.cancelSettingsLongPress());
+        this.elements.appTitle.addEventListener('mouseleave', () => this.cancelSettingsLongPress());
+        this.elements.appTitle.addEventListener('touchcancel', () => this.cancelSettingsLongPress());
+
         this.elements.closeSettings.addEventListener('click', () => this.closeSettings());
         this.elements.saveSettings.addEventListener('click', () => this.saveSettings());
-
-        // Touch area for linear mode
-        this.elements.touchArea.addEventListener('click', () => this.advanceSegment());
 
         // Detection mode change
         this.elements.detectionMode.addEventListener('change', (e) => {
             this.updateModeVisibility(e.target.value);
         });
 
-        // Settings synchronization - Angle
+        // Settings synchronization
         this.elements.targetAngle.addEventListener('input', (e) => {
             this.elements.targetAngleSlider.value = e.target.value;
             this.elements.angleValue.textContent = e.target.value + '°';
@@ -112,7 +132,6 @@ class ObjectFinder {
             this.elements.angleValue.textContent = e.target.value + '°';
         });
 
-        // Settings synchronization - Position (segment)
         this.elements.targetPosition.addEventListener('input', (e) => {
             this.elements.targetPositionSlider.value = e.target.value;
             const segment = Math.round(e.target.value / this.POKER_CARD_WIDTH);
@@ -125,7 +144,6 @@ class ObjectFinder {
             this.elements.positionValue.textContent = `Carta ${segment} (${e.target.value} cm)`;
         });
 
-        // Settings synchronization - Tolerance
         this.elements.tolerance.addEventListener('input', (e) => {
             this.elements.toleranceSlider.value = e.target.value;
             this.elements.toleranceValue.textContent = '±' + e.target.value + '°';
@@ -135,11 +153,94 @@ class ObjectFinder {
             this.elements.tolerance.value = e.target.value;
             this.elements.toleranceValue.textContent = '±' + e.target.value + '°';
         });
+    }
 
-        // Check if sensors are supported
-        if (!window.DeviceOrientationEvent) {
-            console.log('DeviceOrientation not supported, will use touch mode for linear detection');
+    startSettingsLongPress() {
+        this.settingsLongPressTimer = setTimeout(() => {
+            this.openSettings();
+            if (navigator.vibrate) {
+                navigator.vibrate(100);
+            }
+        }, this.longPressDelay);
+    }
+
+    cancelSettingsLongPress() {
+        if (this.settingsLongPressTimer) {
+            clearTimeout(this.settingsLongPressTimer);
+            this.settingsLongPressTimer = null;
         }
+    }
+
+    handlePowerButtonDown() {
+        if (!this.isActive) {
+            // Short press to turn on
+            this.togglePower();
+        } else if (this.config.detectionMode !== 'rotation' && !this.foundTarget) {
+            // In linear mode: check card
+            this.checkCard();
+        } else {
+            // Long press to turn off
+            this.longPressTimer = setTimeout(() => {
+                this.stopFinder();
+                if (navigator.vibrate) {
+                    navigator.vibrate(100);
+                }
+            }, this.longPressDelay);
+        }
+    }
+
+    handlePowerButtonUp() {
+        this.cancelLongPress();
+    }
+
+    cancelLongPress() {
+        if (this.longPressTimer) {
+            clearTimeout(this.longPressTimer);
+            this.longPressTimer = null;
+        }
+    }
+
+    checkCard() {
+        this.currentSegment++;
+
+        const targetSegment = Math.round(parseFloat(this.elements.targetPosition.value) / this.POKER_CARD_WIDTH);
+
+        if (this.currentSegment === targetSegment) {
+            // Found the target card!
+            this.foundTarget = true;
+            this.elements.statusText.textContent = '¡ENCONTRADO!';
+            this.updateSignal(100);
+            this.startBeeping();
+
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        } else {
+            // Wrong card
+            this.showWrongFeedback();
+
+            const positionCm = this.currentSegment * this.POKER_CARD_WIDTH;
+            this.elements.statusText.textContent = `Carta ${this.currentSegment}`;
+
+            const signalStrength = this.calculateSegmentSignalStrength(this.currentSegment, targetSegment);
+            this.updateSignal(signalStrength);
+
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        }
+    }
+
+    showWrongFeedback() {
+        // Show red theme
+        this.elements.powerButton.classList.add('wrong');
+        this.elements.wrongMark.classList.add('visible');
+
+        // Hide after 500ms
+        setTimeout(() => {
+            this.elements.powerButton.classList.remove('wrong');
+            this.elements.wrongMark.classList.remove('visible');
+        }, 500);
     }
 
     updateModeVisibility(mode) {
@@ -157,7 +258,7 @@ class ObjectFinder {
 
     async togglePower() {
         if (!this.isActive) {
-            // Request permission if needed (iOS 13+) and in rotation mode
+            // Request permission if needed
             if (this.config.detectionMode === 'rotation') {
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                     try {
@@ -175,8 +276,6 @@ class ObjectFinder {
             }
 
             this.startFinder();
-        } else {
-            this.stopFinder();
         }
     }
 
@@ -184,6 +283,7 @@ class ObjectFinder {
         this.isActive = true;
         this.initialOrientation = null;
         this.currentSegment = 0;
+        this.foundTarget = false;
 
         // Initialize audio context
         if (!this.audioContext) {
@@ -193,21 +293,16 @@ class ObjectFinder {
         // Update UI
         this.elements.powerButton.classList.add('active');
         this.elements.powerButtonText.textContent = 'APAGAR';
-        this.elements.statusText.textContent = 'BUSCANDO...';
+        this.elements.statusText.textContent = this.config.detectionMode === 'rotation' ? 'BUSCANDO...' : 'Toca para verificar';
         this.elements.statusText.classList.add('active');
         this.elements.radar.classList.add('active');
+        this.elements.wrongMark.classList.remove('visible');
 
-        // Show/hide touch area based on mode
-        if (this.config.detectionMode !== 'rotation') {
-            this.elements.touchArea.classList.add('active');
-        }
-
-        // Start appropriate sensor based on mode
+        // Start orientation sensor if in rotation mode
         if (this.config.detectionMode === 'rotation') {
             window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
         } else {
-            // Linear mode - update display immediately
-            this.updateLinearDisplay();
+            this.updateSignal(0);
         }
 
         console.log('Finder started - Mode:', this.config.detectionMode);
@@ -216,51 +311,44 @@ class ObjectFinder {
     stopFinder() {
         this.isActive = false;
 
-        // Stop listening to sensors
+        // Stop sensors
         window.removeEventListener('deviceorientation', this.handleOrientation.bind(this));
 
         // Stop beeping
         this.stopBeeping();
 
-        // Hide touch area
-        this.elements.touchArea.classList.remove('active');
-
         // Update UI
         this.elements.powerButton.classList.remove('active');
+        this.elements.powerButton.classList.remove('wrong');
         this.elements.powerButtonText.textContent = 'ENCENDER';
         this.elements.statusText.textContent = 'APAGADO';
         this.elements.statusText.classList.remove('active');
         this.elements.radar.classList.remove('active');
+        this.elements.wrongMark.classList.remove('visible');
 
         // Reset signal
         this.updateSignal(0);
-        this.elements.angleDisplay.textContent = '0°';
     }
 
     handleOrientation(event) {
         if (!this.isActive || this.config.detectionMode !== 'rotation') return;
 
-        // Get alpha (compass heading) - ranges from 0 to 360
         let alpha = event.alpha || 0;
 
-        // Store initial orientation on first read
         if (this.initialOrientation === null) {
             this.initialOrientation = { alpha };
             console.log('Initial orientation:', this.initialOrientation);
         }
 
-        // Calculate relative rotation from initial position
         let relativeAngle = this.normalizeAngle(alpha - this.initialOrientation.alpha);
-
         this.currentAngle = relativeAngle;
-        this.elements.angleDisplay.textContent = Math.round(relativeAngle) + '°';
 
-        // Calculate signal strength based on proximity to target angle
+        // Check multiple targets
         const signalStrength = this.calculateSignalStrength(relativeAngle);
         this.updateSignal(signalStrength);
 
-        // Check if we're at target angle
-        if (this.isAtTarget(relativeAngle)) {
+        // Check if at any target
+        if (this.isAtAnyTarget(relativeAngle)) {
             if (!this.isBeeping) {
                 this.startBeeping();
                 this.elements.statusText.textContent = '¡ENCONTRADO!';
@@ -273,67 +361,50 @@ class ObjectFinder {
         }
     }
 
-    advanceSegment() {
-        if (!this.isActive || this.config.detectionMode === 'rotation') return;
+    isAtAnyTarget(currentAngle) {
+        const numTargets = parseInt(this.config.multiTarget);
+        const baseAngle = this.config.targetAngle;
+        const angleStep = 360 / numTargets;
+        const tolerance = this.config.tolerance;
 
-        // Advance to next segment
-        this.currentSegment++;
-
-        // Vibrate for feedback
-        if (navigator.vibrate) {
-            navigator.vibrate(50);
-        }
-
-        console.log('Advanced to segment:', this.currentSegment);
-
-        // Update display
-        this.updateLinearDisplay();
-    }
-
-    updateLinearDisplay() {
-        const positionCm = this.currentSegment * this.POKER_CARD_WIDTH;
-        this.elements.angleDisplay.textContent = `Carta ${this.currentSegment} (${positionCm.toFixed(1)} cm)`;
-
-        // Calculate signal strength based on proximity to target segment
-        const targetSegment = Math.round(parseFloat(this.elements.targetPosition.value) / this.POKER_CARD_WIDTH);
-        const signalStrength = this.calculateSegmentSignalStrength(this.currentSegment, targetSegment);
-        this.updateSignal(signalStrength);
-
-        // Check if we're at target segment
-        if (this.isAtTargetSegment(this.currentSegment, targetSegment)) {
-            if (!this.isBeeping) {
-                this.startBeeping();
-                this.elements.statusText.textContent = '¡ENCONTRADO!';
+        for (let i = 0; i < numTargets; i++) {
+            const targetAngle = (baseAngle + (angleStep * i)) % 360;
+            let diff = Math.abs(currentAngle - targetAngle);
+            if (diff > 180) {
+                diff = 360 - diff;
             }
-        } else {
-            if (this.isBeeping) {
-                this.stopBeeping();
-                this.elements.statusText.textContent = 'BUSCANDO...';
+            if (diff <= tolerance) {
+                return true;
             }
         }
+        return false;
     }
 
     normalizeAngle(angle) {
-        // Normalize angle to 0-360 range
         while (angle < 0) angle += 360;
         while (angle >= 360) angle -= 360;
         return angle;
     }
 
     calculateSignalStrength(currentAngle) {
-        const target = this.config.targetAngle;
+        const numTargets = parseInt(this.config.multiTarget);
+        const baseAngle = this.config.targetAngle;
+        const angleStep = 360 / numTargets;
 
-        // Calculate shortest angular distance
-        let diff = Math.abs(currentAngle - target);
-        if (diff > 180) {
-            diff = 360 - diff;
+        // Find closest target
+        let minDiff = 180;
+        for (let i = 0; i < numTargets; i++) {
+            const targetAngle = (baseAngle + (angleStep * i)) % 360;
+            let diff = Math.abs(currentAngle - targetAngle);
+            if (diff > 180) {
+                diff = 360 - diff;
+            }
+            minDiff = Math.min(minDiff, diff);
         }
 
-        // Map difference to signal strength (0-100)
-        const maxRange = 180;
-        let strength = 100 - (diff / maxRange * 100);
+        // Map to strength
+        let strength = 100 - (minDiff / 180 * 100);
 
-        // Apply sensitivity multiplier
         const sensitivityFactors = {
             low: 0.7,
             medium: 1.0,
@@ -341,23 +412,14 @@ class ObjectFinder {
         };
 
         strength *= sensitivityFactors[this.config.sensitivity];
-
-        // Clamp to 0-100
-        strength = Math.max(0, Math.min(100, strength));
-
-        return strength;
+        return Math.max(0, Math.min(100, strength));
     }
 
     calculateSegmentSignalStrength(currentSegment, targetSegment) {
-        // Calculate distance from target segment
         const diff = Math.abs(currentSegment - targetSegment);
-
-        // Map difference to signal strength (0-100)
-        // Assuming max range of 15 segments (about 1 meter)
         const maxRange = 15;
         let strength = 100 - (diff / maxRange * 100);
 
-        // Apply sensitivity multiplier
         const sensitivityFactors = {
             low: 0.7,
             medium: 1.0,
@@ -365,36 +427,13 @@ class ObjectFinder {
         };
 
         strength *= sensitivityFactors[this.config.sensitivity];
-
-        // Clamp to 0-100
-        strength = Math.max(0, Math.min(100, strength));
-
-        return strength;
-    }
-
-    isAtTarget(currentAngle) {
-        const target = this.config.targetAngle;
-        const tolerance = this.config.tolerance;
-
-        // Calculate shortest angular distance
-        let diff = Math.abs(currentAngle - target);
-        if (diff > 180) {
-            diff = 360 - diff;
-        }
-
-        return diff <= tolerance;
-    }
-
-    isAtTargetSegment(currentSegment, targetSegment) {
-        // Exact match for segments
-        return currentSegment === targetSegment;
+        return Math.max(0, Math.min(100, strength));
     }
 
     updateSignal(strength) {
         this.signalStrength = strength;
         this.elements.signalStrength.textContent = Math.round(strength);
 
-        // Update signal bars
         const barCount = 5;
         const activeBarCount = Math.ceil((strength / 100) * barCount);
 
@@ -412,7 +451,6 @@ class ObjectFinder {
 
         this.isBeeping = true;
 
-        // Calculate beep frequency based on signal strength
         const baseInterval = 1000;
         const minInterval = 100;
         const beepSpeed = baseInterval - ((this.signalStrength / 100) * (baseInterval - minInterval));
@@ -442,7 +480,6 @@ class ObjectFinder {
         oscillator.connect(gainNode);
         gainNode.connect(this.audioContext.destination);
 
-        // Beep parameters
         const frequency = 800 + (this.signalStrength * 10);
         const duration = 0.1;
 
@@ -459,15 +496,14 @@ class ObjectFinder {
     openSettings() {
         this.elements.settingsMenu.classList.remove('hidden');
 
-        // Load current config into form
         this.elements.detectionMode.value = this.config.detectionMode;
         this.updateModeVisibility(this.config.detectionMode);
 
+        this.elements.multiTarget.value = this.config.multiTarget;
         this.elements.targetAngle.value = this.config.targetAngle;
         this.elements.targetAngleSlider.value = this.config.targetAngle;
         this.elements.angleValue.textContent = this.config.targetAngle + '°';
 
-        // Calculate target position from segment
         const targetPos = this.config.targetSegment * this.POKER_CARD_WIDTH;
         this.elements.targetPosition.value = targetPos;
         this.elements.targetPositionSlider.value = targetPos;
@@ -486,16 +522,15 @@ class ObjectFinder {
 
     saveSettings() {
         this.config.detectionMode = this.elements.detectionMode.value;
+        this.config.multiTarget = parseInt(this.elements.multiTarget.value);
         this.config.targetAngle = parseInt(this.elements.targetAngle.value);
 
-        // Calculate target segment from position
         const targetPos = parseFloat(this.elements.targetPosition.value);
         this.config.targetSegment = Math.round(targetPos / this.POKER_CARD_WIDTH);
 
         this.config.tolerance = parseInt(this.elements.tolerance.value);
         this.config.sensitivity = this.elements.sensitivity.value;
 
-        // Save to localStorage
         localStorage.setItem('finderConfig', JSON.stringify(this.config));
 
         this.closeSettings();
@@ -516,7 +551,7 @@ class ObjectFinder {
     }
 }
 
-// Initialize app when DOM is ready
+// Initialize app
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         new ObjectFinder();

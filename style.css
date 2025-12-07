@@ -233,6 +233,25 @@ header h1:hover {
     animation: pulse 1.5s infinite;
 }
 
+.wrong-mark {
+    font-size: 72px;
+    color: #ff0044;
+    font-weight: bold;
+    text-shadow: 0 0 20px rgba(255, 0, 68, 0.8);
+    display: none;
+}
+
+.wrong-mark.visible {
+    display: block;
+    animation: wrongAppear 0.3s ease-out;
+}
+
+@keyframes wrongAppear {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -262,8 +281,10 @@ header h1:hover {
     font-weight: bold;
     cursor: pointer;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    gap: 5px;
     transition: all 0.3s;
     box-shadow:
         0 8px 20px rgba(0, 0, 0, 0.3),
@@ -289,46 +310,47 @@ header h1:hover {
     animation: buttonGlow 2s infinite;
 }
 
+.power-button.wrong {
+    border-color: #ff0044;
+    background: linear-gradient(145deg, #ff0044, #cc0033);
+    box-shadow:
+        0 8px 20px rgba(255, 0, 68, 0.6),
+        inset 0 -5px 15px rgba(0, 0, 0, 0.2),
+        inset 0 5px 15px rgba(255, 255, 255, 0.2);
+    animation: wrongPulse 0.5s ease-out;
+}
+
+@keyframes wrongPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
 @keyframes buttonGlow {
     0%, 100% { box-shadow: 0 8px 20px rgba(0, 255, 136, 0.4), inset 0 -5px 15px rgba(0, 0, 0, 0.2), inset 0 5px 15px rgba(255, 255, 255, 0.2); }
     50% { box-shadow: 0 8px 30px rgba(0, 255, 136, 0.8), inset 0 -5px 15px rgba(0, 0, 0, 0.2), inset 0 5px 15px rgba(255, 255, 255, 0.2); }
 }
 
+.power-icon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: -5px;
+}
+
 .power-text {
-    font-size: 18px;
+    font-size: 14px;
     letter-spacing: 2px;
     font-weight: bold;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
-/* Touch area for linear detection */
-.touch-area {
-    position: fixed;
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 90%;
-    max-width: 400px;
-    height: 120px;
-    background: rgba(0, 212, 255, 0.1);
-    border: 2px dashed rgba(0, 212, 255, 0.4);
-    border-radius: 15px;
-    display: none;
-    align-items: center;
-    justify-content: center;
+.angle-display {
+    font-size: 18px;
     color: #00d4ff;
-    font-size: 16px;
-    text-align: center;
-    padding: 10px;
-    z-index: 100;
+    font-family: 'Courier New', monospace;
 }
 
-.touch-area.active {
-    display: flex;
-}
-
-.touch-area-text {
-    opacity: 0.8;
+.angle-display.hidden {
+    display: none;
 }
 
 /* Splash Screen */
