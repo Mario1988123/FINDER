@@ -1,4 +1,4 @@
-// Object Finder App - Multi-Mode Object Locator v2.1
+// Object Finder App - Multi-Mode Object Locator v2.1.1
 
 class ObjectFinder {
     constructor() {
@@ -23,15 +23,17 @@ class ObjectFinder {
         this.audioContext = null;
         this.beepInterval = null;
 
-        // Linear detection using acceleration magnitude
-        this.lastAccelMagnitude = 0;
-        this.movementThreshold = 2.0; // m/s² threshold for detecting movement
-        this.segmentCooldown = false;
-        this.lastSegmentTime = 0;
+        // Linear detection - time-based with movement detection
+        this.isMoving = false;
+        this.movementStartTime = 0;
+        this.lastMovementTime = 0;
+        this.movementThreshold = 1.5; // m/s² threshold for detecting movement
+        this.movementTimeout = 200; // ms without movement to reset
+        this.segmentDuration = 800; // ms of movement to advance one segment (card width ~6.4cm)
+        this.accumulatedMovementTime = 0;
 
         // Constants
         this.POKER_CARD_WIDTH = 6.4; // cm
-        this.COOLDOWN_MS = 300; // Milliseconds between segment detections
 
         // DOM Elements
         this.elements = {
@@ -199,9 +201,10 @@ class ObjectFinder {
         this.isActive = true;
         this.initialOrientation = null;
         this.currentSegment = 0;
-        this.lastAccelMagnitude = 0;
-        this.segmentCooldown = false;
-        this.lastSegmentTime = 0;
+        this.isMoving = false;
+        this.movementStartTime = 0;
+        this.lastMovementTime = 0;
+        this.accumulatedMovementTime = 0;
 
         // Initialize audio context
         if (!this.audioContext) {
@@ -292,7 +295,6 @@ class ObjectFinder {
         // Calculate acceleration magnitude
         const ax = accel.x || 0;
         const ay = accel.y || 0;
-        const az = accel.z || 0;
 
         // Choose axis based on mode
         let relevantAccel;
@@ -304,24 +306,44 @@ class ObjectFinder {
 
         const now = Date.now();
 
-        // Detect sharp movement to count segments
-        if (relevantAccel > this.movementThreshold && !this.segmentCooldown) {
-            // Increment segment counter
-            this.currentSegment++;
-            this.segmentCooldown = true;
-            this.lastSegmentTime = now;
-
-            // Vibrate for feedback
-            if (navigator.vibrate) {
-                navigator.vibrate(30);
+        // Detect if there's movement
+        if (relevantAccel > this.movementThreshold) {
+            // Movement detected
+            if (!this.isMoving) {
+                // Started moving
+                this.isMoving = true;
+                this.movementStartTime = now;
+                console.log('Movement started');
             }
 
-            console.log('Segment detected:', this.currentSegment);
-        }
+            this.lastMovementTime = now;
 
-        // Reset cooldown
-        if (this.segmentCooldown && (now - this.lastSegmentTime) > this.COOLDOWN_MS) {
-            this.segmentCooldown = false;
+            // Accumulate movement time
+            const movementDuration = now - this.movementStartTime;
+            this.accumulatedMovementTime = movementDuration;
+
+            // Check if we should advance to next segment
+            const segmentsToAdvance = Math.floor(this.accumulatedMovementTime / this.segmentDuration);
+            if (segmentsToAdvance > this.currentSegment) {
+                this.currentSegment = segmentsToAdvance;
+
+                // Vibrate for feedback
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+
+                console.log('Advanced to segment:', this.currentSegment);
+            }
+
+        } else {
+            // No significant movement
+            if (this.isMoving && (now - this.lastMovementTime) > this.movementTimeout) {
+                // Stopped moving
+                this.isMoving = false;
+                this.movementStartTime = 0;
+                this.accumulatedMovementTime = 0;
+                console.log('Movement stopped at segment:', this.currentSegment);
+            }
         }
 
         // Update display
@@ -345,8 +367,6 @@ class ObjectFinder {
                 this.elements.statusText.textContent = 'BUSCANDO...';
             }
         }
-
-        this.lastAccelMagnitude = relevantAccel;
     }
 
     normalizeAngle(angle) {

@@ -55,6 +55,9 @@ jobs:
         cp -f index.html build-cordova/www/
         cp -f style.css build-cordova/www/
         cp -f app.js build-cordova/www/
+        cp -f icon-192.png build-cordova/www/
+        cp -f icon-512.png build-cordova/www/
+        cp -f manifest.json build-cordova/www/
         echo "✓ Web files copied"
 
     - name: Create config.xml
