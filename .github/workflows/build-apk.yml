@@ -30,6 +30,15 @@ jobs:
     - name: Install Cordova
       run: npm install -g cordova@12
 
+    - name: Setup Gradle 8.x
+      run: |
+        wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+        unzip -q gradle-8.5-bin.zip
+        sudo mv gradle-8.5 /opt/gradle
+        sudo ln -sf /opt/gradle/bin/gradle /usr/bin/gradle
+        gradle --version
+        echo "✓ Gradle 8.5 installed"
+
     - name: Create Cordova project
       run: |
         cordova create build-cordova com.objectfinder.app "Object Finder"
@@ -79,6 +88,8 @@ jobs:
     - name: Build APK with Cordova
       run: |
         cd build-cordova
+        export GRADLE_HOME=/opt/gradle
+        export PATH=$GRADLE_HOME/bin:$PATH
         cordova build android --debug --verbose
         echo "✓ APK built successfully"
 
