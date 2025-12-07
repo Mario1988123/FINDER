@@ -608,8 +608,8 @@ header h1:hover {
 /* Corner buttons for Anytime mode */
 .corner-button {
     position: fixed;
-    width: 60px;
-    height: 60px;
+    width: 120px;
+    height: 120px;
     background: transparent;
     z-index: 100;
     cursor: pointer;

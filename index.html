@@ -139,11 +139,12 @@
                     <!-- Campos de objetos se generarán dinámicamente aquí -->
                 </div>
 
-                <div class="setting-item">
-                    <label for="tolerance">Tolerancia:</label>
+                <div class="setting-item rotation-mode">
+                    <label for="tolerance">Tolerancia (grados):</label>
                     <input type="number" id="tolerance" min="1" max="45" value="10">
                     <input type="range" id="toleranceSlider" min="1" max="45" value="10">
                     <span class="range-value" id="toleranceValue">±10°</span>
+                    <p class="hint">Margen de error para detección de ángulo</p>
                 </div>
 
                 <div class="setting-item">

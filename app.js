@@ -224,6 +224,9 @@ class ObjectFinder {
         this.elements.statusText.textContent = 'Toca para verificar';
         this.updateSignal(0);
 
+        // Reset button to "FIND" for next card
+        this.updatePowerButtonForAnytime(false);
+
         if (navigator.vibrate) {
             navigator.vibrate([100, 50, 100]);
         }
@@ -331,9 +334,12 @@ class ObjectFinder {
         } else if (!this.isActive) {
             // Other modes: short press to turn on
             this.togglePower();
-        } else if (this.config.detectionMode === 'anytime') {
-            // In anytime mode: always check (multiple attempts allowed)
+        } else if (this.config.detectionMode === 'anytime' && !this.foundTarget) {
+            // In anytime mode: check card (multiple attempts allowed)
             this.checkCardAnytime();
+        } else if (this.config.detectionMode === 'anytime' && this.foundTarget) {
+            // In anytime mode after found: click to turn off
+            this.shortPressRotation = true;
         } else if (this.config.detectionMode === 'linear-horizontal' && !this.foundTarget) {
             // In linear mode: check object
             this.checkCard();
@@ -410,6 +416,9 @@ class ObjectFinder {
             this.updateSignal(100);
             this.startBeeping();
 
+            // Change button to "APAGAR" now that card is found
+            this.updatePowerButtonForAnytime(true);
+
             if (navigator.vibrate) {
                 navigator.vibrate([200, 100, 200]);
             }
@@ -484,6 +493,21 @@ class ObjectFinder {
         }
     }
 
+    updatePowerButtonForAnytime(found) {
+        const icon = this.elements.powerButton.querySelector('.power-icon');
+        const text = this.elements.powerButtonText;
+
+        if (found) {
+            // Found the card: show power off icon and "APAGAR"
+            icon.innerHTML = '<path fill="currentColor" d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C18.05,7.91 19,9.9 19,12C19,15.87 15.87,19 12,19C8.13,19 5,15.87 5,12C5,9.9 5.95,7.91 7.59,6.59L6.17,5.17C4.23,6.82 3,9.26 3,12C3,16.97 7.03,21 12,21C16.97,21 21,16.97 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/>';
+            text.textContent = 'APAGAR';
+        } else {
+            // Searching: show magnifying glass icon and "FIND"
+            icon.innerHTML = '<path fill="currentColor" d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>';
+            text.textContent = 'FIND';
+        }
+    }
+
     updateModeVisibility(mode) {
         const rotationMode = document.querySelectorAll('.rotation-mode');
         const linearMode = document.querySelectorAll('.linear-mode');
@@ -553,7 +577,13 @@ class ObjectFinder {
 
         // Update UI
         this.elements.powerButton.classList.add('active');
-        this.elements.powerButtonText.textContent = 'APAGAR';
+
+        // Different button text for Anytime mode
+        if (this.config.detectionMode === 'anytime') {
+            this.updatePowerButtonForAnytime(false); // false = not found yet
+        } else {
+            this.elements.powerButtonText.textContent = 'APAGAR';
+        }
 
         if (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere') {
             this.elements.statusText.textContent = 'BUSCANDO...';
@@ -568,15 +598,17 @@ class ObjectFinder {
         // Show corner buttons if in anytime mode
         if (this.config.detectionMode === 'anytime') {
             this.showCornerButtons();
+            this.updateSignal(0); // Start at 0%
         } else {
             this.hideCornerButtons();
+            if (this.config.detectionMode !== 'rotation' && this.config.detectionMode !== 'anywhere') {
+                this.updateSignal(0);
+            }
         }
 
         // Start orientation sensor if in rotation or anywhere mode
         if (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere') {
             window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
-        } else {
-            this.updateSignal(0);
         }
 
         console.log('Finder started - Mode:', this.config.detectionMode);
