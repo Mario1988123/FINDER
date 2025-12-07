@@ -1,4 +1,4 @@
-// Object Finder App - Multi-Mode Object Locator
+// Object Finder App - Multi-Mode Object Locator v2.1
 
 class ObjectFinder {
     constructor() {
@@ -6,7 +6,7 @@ class ObjectFinder {
         this.config = {
             detectionMode: 'rotation', // rotation, linear-horizontal, linear-vertical
             targetAngle: 90,
-            targetPosition: 25, // in cm for linear modes
+            targetSegment: 4, // Target segment for linear modes (1-15)
             tolerance: 10,
             sensitivity: 'medium'
         };
@@ -14,9 +14,8 @@ class ObjectFinder {
         // State
         this.isActive = false;
         this.currentAngle = 0;
-        this.currentPosition = 0; // in cm for linear modes
+        this.currentSegment = 0; // Current segment for linear modes
         this.initialOrientation = null;
-        this.initialPosition = null;
         this.signalStrength = 0;
         this.isBeeping = false;
 
@@ -24,14 +23,15 @@ class ObjectFinder {
         this.audioContext = null;
         this.beepInterval = null;
 
-        // Accelerometer data for linear detection
-        this.accelerometerData = { x: 0, y: 0, z: 0 };
-        this.velocity = { x: 0, y: 0 };
-        this.position = { x: 0, y: 0 };
-        this.lastTimestamp = null;
+        // Linear detection using acceleration magnitude
+        this.lastAccelMagnitude = 0;
+        this.movementThreshold = 2.0; // m/s² threshold for detecting movement
+        this.segmentCooldown = false;
+        this.lastSegmentTime = 0;
 
         // Constants
         this.POKER_CARD_WIDTH = 6.4; // cm
+        this.COOLDOWN_MS = 300; // Milliseconds between segment detections
 
         // DOM Elements
         this.elements = {
@@ -98,15 +98,17 @@ class ObjectFinder {
             this.elements.angleValue.textContent = e.target.value + '°';
         });
 
-        // Settings synchronization - Position
+        // Settings synchronization - Position (segment)
         this.elements.targetPosition.addEventListener('input', (e) => {
             this.elements.targetPositionSlider.value = e.target.value;
-            this.elements.positionValue.textContent = e.target.value + ' cm';
+            const segment = Math.round(e.target.value / this.POKER_CARD_WIDTH);
+            this.elements.positionValue.textContent = `Carta ${segment} (${e.target.value} cm)`;
         });
 
         this.elements.targetPositionSlider.addEventListener('input', (e) => {
             this.elements.targetPosition.value = e.target.value;
-            this.elements.positionValue.textContent = e.target.value + ' cm';
+            const segment = Math.round(e.target.value / this.POKER_CARD_WIDTH);
+            this.elements.positionValue.textContent = `Carta ${segment} (${e.target.value} cm)`;
         });
 
         // Settings synchronization - Tolerance
@@ -180,10 +182,10 @@ class ObjectFinder {
     startFinder() {
         this.isActive = true;
         this.initialOrientation = null;
-        this.initialPosition = null;
-        this.position = { x: 0, y: 0 };
-        this.velocity = { x: 0, y: 0 };
-        this.lastTimestamp = null;
+        this.currentSegment = 0;
+        this.lastAccelMagnitude = 0;
+        this.segmentCooldown = false;
+        this.lastSegmentTime = 0;
 
         // Initialize audio context
         if (!this.audioContext) {
@@ -268,59 +270,55 @@ class ObjectFinder {
     handleMotion(event) {
         if (!this.isActive || this.config.detectionMode === 'rotation') return;
 
-        const acceleration = event.accelerationIncludingGravity;
-        if (!acceleration) return;
+        const accel = event.accelerationIncludingGravity;
+        if (!accel) return;
+
+        // Calculate acceleration magnitude
+        const ax = accel.x || 0;
+        const ay = accel.y || 0;
+        const az = accel.z || 0;
+
+        // Choose axis based on mode
+        let relevantAccel;
+        if (this.config.detectionMode === 'linear-horizontal') {
+            relevantAccel = Math.abs(ax);
+        } else { // linear-vertical
+            relevantAccel = Math.abs(ay);
+        }
 
         const now = Date.now();
-        if (this.lastTimestamp === null) {
-            this.lastTimestamp = now;
-            return;
+
+        // Detect sharp movement to count segments
+        if (relevantAccel > this.movementThreshold && !this.segmentCooldown) {
+            // Increment segment counter
+            this.currentSegment++;
+            this.segmentCooldown = true;
+            this.lastSegmentTime = now;
+
+            // Vibrate for feedback
+            if (navigator.vibrate) {
+                navigator.vibrate(30);
+            }
+
+            console.log('Segment detected:', this.currentSegment);
         }
 
-        const dt = (now - this.lastTimestamp) / 1000; // Convert to seconds
-        this.lastTimestamp = now;
-
-        // Get acceleration values (remove gravity ~9.8 m/s²)
-        let ax = acceleration.x || 0;
-        let ay = acceleration.y || 0;
-
-        // Simple high-pass filter to remove gravity
-        const alpha = 0.8;
-        this.accelerometerData.x = alpha * this.accelerometerData.x + (1 - alpha) * ax;
-        this.accelerometerData.y = alpha * this.accelerometerData.y + (1 - alpha) * ay;
-
-        ax = ax - this.accelerometerData.x;
-        ay = ay - this.accelerometerData.y;
-
-        // Integrate acceleration to get velocity (m/s)
-        this.velocity.x += ax * dt;
-        this.velocity.y += ay * dt;
-
-        // Apply damping to velocity
-        this.velocity.x *= 0.95;
-        this.velocity.y *= 0.95;
-
-        // Integrate velocity to get position (m)
-        this.position.x += this.velocity.x * dt;
-        this.position.y += this.velocity.y * dt;
-
-        // Convert to cm
-        let positionCm;
-        if (this.config.detectionMode === 'linear-horizontal') {
-            positionCm = Math.abs(this.position.x * 100);
-        } else { // linear-vertical
-            positionCm = Math.abs(this.position.y * 100);
+        // Reset cooldown
+        if (this.segmentCooldown && (now - this.lastSegmentTime) > this.COOLDOWN_MS) {
+            this.segmentCooldown = false;
         }
 
-        this.currentPosition = positionCm;
-        this.elements.angleDisplay.textContent = positionCm.toFixed(1) + ' cm';
+        // Update display
+        const positionCm = this.currentSegment * this.POKER_CARD_WIDTH;
+        this.elements.angleDisplay.textContent = `Carta ${this.currentSegment} (${positionCm.toFixed(1)} cm)`;
 
-        // Calculate signal strength based on proximity to target position
-        const signalStrength = this.calculatePositionSignalStrength(positionCm);
+        // Calculate signal strength based on proximity to target segment
+        const targetSegment = Math.round(parseFloat(this.elements.targetPosition.value) / this.POKER_CARD_WIDTH);
+        const signalStrength = this.calculateSegmentSignalStrength(this.currentSegment, targetSegment);
         this.updateSignal(signalStrength);
 
-        // Check if we're at target position
-        if (this.isAtTargetPosition(positionCm)) {
+        // Check if we're at target segment
+        if (this.isAtTargetSegment(this.currentSegment, targetSegment)) {
             if (!this.isBeeping) {
                 this.startBeeping();
                 this.elements.statusText.textContent = '¡ENCONTRADO!';
@@ -331,6 +329,8 @@ class ObjectFinder {
                 this.elements.statusText.textContent = 'BUSCANDO...';
             }
         }
+
+        this.lastAccelMagnitude = relevantAccel;
     }
 
     normalizeAngle(angle) {
@@ -368,15 +368,13 @@ class ObjectFinder {
         return strength;
     }
 
-    calculatePositionSignalStrength(currentPosition) {
-        const target = this.config.targetPosition;
-
-        // Calculate distance from target
-        const diff = Math.abs(currentPosition - target);
+    calculateSegmentSignalStrength(currentSegment, targetSegment) {
+        // Calculate distance from target segment
+        const diff = Math.abs(currentSegment - targetSegment);
 
         // Map difference to signal strength (0-100)
-        // Assuming max range of 100cm
-        const maxRange = 100;
+        // Assuming max range of 15 segments (about 1 meter)
+        const maxRange = 15;
         let strength = 100 - (diff / maxRange * 100);
 
         // Apply sensitivity multiplier
@@ -407,12 +405,10 @@ class ObjectFinder {
         return diff <= tolerance;
     }
 
-    isAtTargetPosition(currentPosition) {
-        const target = this.config.targetPosition;
-        const tolerance = this.config.tolerance / 10; // Convert degrees to cm (rough approximation)
-
-        const diff = Math.abs(currentPosition - target);
-
+    isAtTargetSegment(currentSegment, targetSegment) {
+        // Tolerance for segments (±1 segment)
+        const tolerance = 1;
+        const diff = Math.abs(currentSegment - targetSegment);
         return diff <= tolerance;
     }
 
@@ -493,9 +489,11 @@ class ObjectFinder {
         this.elements.targetAngleSlider.value = this.config.targetAngle;
         this.elements.angleValue.textContent = this.config.targetAngle + '°';
 
-        this.elements.targetPosition.value = this.config.targetPosition;
-        this.elements.targetPositionSlider.value = this.config.targetPosition;
-        this.elements.positionValue.textContent = this.config.targetPosition + ' cm';
+        // Calculate target position from segment
+        const targetPos = this.config.targetSegment * this.POKER_CARD_WIDTH;
+        this.elements.targetPosition.value = targetPos;
+        this.elements.targetPositionSlider.value = targetPos;
+        this.elements.positionValue.textContent = `Carta ${this.config.targetSegment} (${targetPos} cm)`;
 
         this.elements.tolerance.value = this.config.tolerance;
         this.elements.toleranceSlider.value = this.config.tolerance;
@@ -511,7 +509,11 @@ class ObjectFinder {
     saveSettings() {
         this.config.detectionMode = this.elements.detectionMode.value;
         this.config.targetAngle = parseInt(this.elements.targetAngle.value);
-        this.config.targetPosition = parseFloat(this.elements.targetPosition.value);
+
+        // Calculate target segment from position
+        const targetPos = parseFloat(this.elements.targetPosition.value);
+        this.config.targetSegment = Math.round(targetPos / this.POKER_CARD_WIDTH);
+
         this.config.tolerance = parseInt(this.elements.tolerance.value);
         this.config.sensitivity = this.elements.sensitivity.value;
 
