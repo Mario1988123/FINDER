@@ -87,24 +87,21 @@
                 </div>
 
                 <div class="setting-item rotation-mode">
-                    <label for="multiTarget">Detección múltiple:</label>
-                    <select id="multiTarget">
-                        <option value="1">1 posición (360°)</option>
-                        <option value="2">2 posiciones (180°)</option>
-                        <option value="3">3 posiciones (120°)</option>
-                        <option value="4">4 posiciones (90°)</option>
-                        <option value="6">6 posiciones (60°)</option>
-                        <option value="8">8 posiciones (45°)</option>
-                        <option value="12">12 posiciones (30°)</option>
+                    <label for="numPositions">Número de posiciones:</label>
+                    <select id="numPositions">
+                        <option value="1">1 posición</option>
+                        <option value="2">2 posiciones</option>
+                        <option value="3">3 posiciones</option>
+                        <option value="4">4 posiciones</option>
+                        <option value="5">5 posiciones</option>
+                        <option value="6">6 posiciones</option>
+                        <option value="8">8 posiciones</option>
+                        <option value="12">12 posiciones</option>
                     </select>
-                    <p class="hint">Detectará en múltiples ángulos distribuidos uniformemente</p>
                 </div>
 
-                <div class="setting-item rotation-mode">
-                    <label for="targetAngle">Ángulo inicial (grados):</label>
-                    <input type="number" id="targetAngle" min="0" max="360" value="90">
-                    <input type="range" id="targetAngleSlider" min="0" max="360" value="90">
-                    <span class="range-value" id="angleValue">90°</span>
+                <div class="setting-item rotation-mode" id="anglesContainer">
+                    <!-- Campos de ángulos se generarán dinámicamente aquí -->
                 </div>
 
                 <div class="setting-item linear-mode hidden">
