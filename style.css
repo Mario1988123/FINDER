@@ -252,20 +252,18 @@ header h1:hover {
 }
 
 .power-button {
-    width: 120px;
-    height: 120px;
+    width: 140px;
+    height: 140px;
     border-radius: 50%;
     border: 4px solid #fff;
     background: linear-gradient(145deg, #2a5298, #1e3c72);
     color: #fff;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: bold;
     cursor: pointer;
     display: flex;
-    flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 5px;
     transition: all 0.3s;
     box-shadow:
         0 8px 20px rgba(0, 0, 0, 0.3),
@@ -296,15 +294,41 @@ header h1:hover {
     50% { box-shadow: 0 8px 30px rgba(0, 255, 136, 0.8), inset 0 -5px 15px rgba(0, 0, 0, 0.2), inset 0 5px 15px rgba(255, 255, 255, 0.2); }
 }
 
-.power-icon {
-    font-size: 36px;
+.power-text {
+    font-size: 18px;
+    letter-spacing: 2px;
+    font-weight: bold;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
-.power-text {
-    font-size: 14px;
-    letter-spacing: 1px;
-    font-weight: bold;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+/* Touch area for linear detection */
+.touch-area {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 400px;
+    height: 120px;
+    background: rgba(0, 212, 255, 0.1);
+    border: 2px dashed rgba(0, 212, 255, 0.4);
+    border-radius: 15px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #00d4ff;
+    font-size: 16px;
+    text-align: center;
+    padding: 10px;
+    z-index: 100;
+}
+
+.touch-area.active {
+    display: flex;
+}
+
+.touch-area-text {
+    opacity: 0.8;
 }
 
 /* Splash Screen */

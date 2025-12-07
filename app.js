@@ -1,4 +1,4 @@
-// Object Finder App - Multi-Mode Object Locator v2.1.1
+// Object Finder App - Multi-Mode Object Locator v2.2
 
 class ObjectFinder {
     constructor() {
@@ -23,21 +23,13 @@ class ObjectFinder {
         this.audioContext = null;
         this.beepInterval = null;
 
-        // Linear detection - time-based with movement detection
-        this.isMoving = false;
-        this.movementStartTime = 0;
-        this.lastMovementTime = 0;
-        this.movementThreshold = 1.5; // m/s² threshold for detecting movement
-        this.movementTimeout = 200; // ms without movement to reset
-        this.segmentDuration = 800; // ms of movement to advance one segment (card width ~6.4cm)
-        this.accumulatedMovementTime = 0;
-
         // Constants
         this.POKER_CARD_WIDTH = 6.4; // cm
 
         // DOM Elements
         this.elements = {
             powerButton: document.getElementById('powerButton'),
+            powerButtonText: document.getElementById('powerButtonText'),
             statusText: document.getElementById('statusText'),
             signalStrength: document.getElementById('signalStrength'),
             angleDisplay: document.getElementById('angleDisplay'),
@@ -60,7 +52,8 @@ class ObjectFinder {
             sensitivity: document.getElementById('sensitivity'),
             permissionOverlay: document.getElementById('permissionOverlay'),
             requestPermission: document.getElementById('requestPermission'),
-            splashScreen: document.getElementById('splashScreen')
+            splashScreen: document.getElementById('splashScreen'),
+            touchArea: document.getElementById('touchArea')
         };
 
         // Load saved configuration
@@ -99,6 +92,9 @@ class ObjectFinder {
         this.elements.appTitle.addEventListener('click', () => this.openSettings());
         this.elements.closeSettings.addEventListener('click', () => this.closeSettings());
         this.elements.saveSettings.addEventListener('click', () => this.saveSettings());
+
+        // Touch area for linear mode
+        this.elements.touchArea.addEventListener('click', () => this.advanceSegment());
 
         // Detection mode change
         this.elements.detectionMode.addEventListener('change', (e) => {
@@ -141,8 +137,8 @@ class ObjectFinder {
         });
 
         // Check if sensors are supported
-        if (!window.DeviceOrientationEvent && !window.DeviceMotionEvent) {
-            alert('Tu dispositivo no soporta los sensores necesarios.');
+        if (!window.DeviceOrientationEvent) {
+            console.log('DeviceOrientation not supported, will use touch mode for linear detection');
         }
     }
 
@@ -161,32 +157,19 @@ class ObjectFinder {
 
     async togglePower() {
         if (!this.isActive) {
-            // Request permission if needed (iOS 13+)
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                try {
-                    const permission = await DeviceOrientationEvent.requestPermission();
-                    if (permission !== 'granted') {
-                        alert('Permiso denegado para acceder a los sensores.');
-                        return;
-                    }
-                } catch (error) {
-                    console.error('Error requesting permission:', error);
-                    this.elements.permissionOverlay.classList.remove('hidden');
-                    return;
-                }
-            }
-
-            // Request motion permission if in linear mode
-            if (this.config.detectionMode !== 'rotation') {
-                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            // Request permission if needed (iOS 13+) and in rotation mode
+            if (this.config.detectionMode === 'rotation') {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                     try {
-                        const permission = await DeviceMotionEvent.requestPermission();
+                        const permission = await DeviceOrientationEvent.requestPermission();
                         if (permission !== 'granted') {
-                            alert('Permiso denegado para acceder al acelerómetro.');
+                            alert('Permiso denegado para acceder a los sensores.');
                             return;
                         }
                     } catch (error) {
-                        console.error('Error requesting motion permission:', error);
+                        console.error('Error requesting permission:', error);
+                        this.elements.permissionOverlay.classList.remove('hidden');
+                        return;
                     }
                 }
             }
@@ -201,10 +184,6 @@ class ObjectFinder {
         this.isActive = true;
         this.initialOrientation = null;
         this.currentSegment = 0;
-        this.isMoving = false;
-        this.movementStartTime = 0;
-        this.lastMovementTime = 0;
-        this.accumulatedMovementTime = 0;
 
         // Initialize audio context
         if (!this.audioContext) {
@@ -213,16 +192,22 @@ class ObjectFinder {
 
         // Update UI
         this.elements.powerButton.classList.add('active');
-        this.elements.powerButton.querySelector('.power-text').textContent = 'APAGAR';
+        this.elements.powerButtonText.textContent = 'APAGAR';
         this.elements.statusText.textContent = 'BUSCANDO...';
         this.elements.statusText.classList.add('active');
         this.elements.radar.classList.add('active');
+
+        // Show/hide touch area based on mode
+        if (this.config.detectionMode !== 'rotation') {
+            this.elements.touchArea.classList.add('active');
+        }
 
         // Start appropriate sensor based on mode
         if (this.config.detectionMode === 'rotation') {
             window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
         } else {
-            window.addEventListener('devicemotion', this.handleMotion.bind(this));
+            // Linear mode - update display immediately
+            this.updateLinearDisplay();
         }
 
         console.log('Finder started - Mode:', this.config.detectionMode);
@@ -233,14 +218,16 @@ class ObjectFinder {
 
         // Stop listening to sensors
         window.removeEventListener('deviceorientation', this.handleOrientation.bind(this));
-        window.removeEventListener('devicemotion', this.handleMotion.bind(this));
 
         // Stop beeping
         this.stopBeeping();
 
+        // Hide touch area
+        this.elements.touchArea.classList.remove('active');
+
         // Update UI
         this.elements.powerButton.classList.remove('active');
-        this.elements.powerButton.querySelector('.power-text').textContent = 'ENCENDER';
+        this.elements.powerButtonText.textContent = 'ENCENDER';
         this.elements.statusText.textContent = 'APAGADO';
         this.elements.statusText.classList.remove('active');
         this.elements.radar.classList.remove('active');
@@ -286,67 +273,24 @@ class ObjectFinder {
         }
     }
 
-    handleMotion(event) {
+    advanceSegment() {
         if (!this.isActive || this.config.detectionMode === 'rotation') return;
 
-        const accel = event.accelerationIncludingGravity;
-        if (!accel) return;
+        // Advance to next segment
+        this.currentSegment++;
 
-        // Calculate acceleration magnitude
-        const ax = accel.x || 0;
-        const ay = accel.y || 0;
-
-        // Choose axis based on mode
-        let relevantAccel;
-        if (this.config.detectionMode === 'linear-horizontal') {
-            relevantAccel = Math.abs(ax);
-        } else { // linear-vertical
-            relevantAccel = Math.abs(ay);
+        // Vibrate for feedback
+        if (navigator.vibrate) {
+            navigator.vibrate(50);
         }
 
-        const now = Date.now();
-
-        // Detect if there's movement
-        if (relevantAccel > this.movementThreshold) {
-            // Movement detected
-            if (!this.isMoving) {
-                // Started moving
-                this.isMoving = true;
-                this.movementStartTime = now;
-                console.log('Movement started');
-            }
-
-            this.lastMovementTime = now;
-
-            // Accumulate movement time
-            const movementDuration = now - this.movementStartTime;
-            this.accumulatedMovementTime = movementDuration;
-
-            // Check if we should advance to next segment
-            const segmentsToAdvance = Math.floor(this.accumulatedMovementTime / this.segmentDuration);
-            if (segmentsToAdvance > this.currentSegment) {
-                this.currentSegment = segmentsToAdvance;
-
-                // Vibrate for feedback
-                if (navigator.vibrate) {
-                    navigator.vibrate(50);
-                }
-
-                console.log('Advanced to segment:', this.currentSegment);
-            }
-
-        } else {
-            // No significant movement
-            if (this.isMoving && (now - this.lastMovementTime) > this.movementTimeout) {
-                // Stopped moving
-                this.isMoving = false;
-                this.movementStartTime = 0;
-                this.accumulatedMovementTime = 0;
-                console.log('Movement stopped at segment:', this.currentSegment);
-            }
-        }
+        console.log('Advanced to segment:', this.currentSegment);
 
         // Update display
+        this.updateLinearDisplay();
+    }
+
+    updateLinearDisplay() {
         const positionCm = this.currentSegment * this.POKER_CARD_WIDTH;
         this.elements.angleDisplay.textContent = `Carta ${this.currentSegment} (${positionCm.toFixed(1)} cm)`;
 
@@ -442,10 +386,8 @@ class ObjectFinder {
     }
 
     isAtTargetSegment(currentSegment, targetSegment) {
-        // Tolerance for segments (±1 segment)
-        const tolerance = 1;
-        const diff = Math.abs(currentSegment - targetSegment);
-        return diff <= tolerance;
+        // Exact match for segments
+        return currentSegment === targetSegment;
     }
 
     updateSignal(strength) {
