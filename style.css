@@ -438,6 +438,8 @@ header h1:hover {
     padding: 30px;
     width: 90%;
     max-width: 400px;
+    max-height: 80vh;
+    overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     border: 2px solid #00d4ff;
     position: relative;
@@ -601,6 +603,40 @@ header h1:hover {
 .linear-mode.hidden,
 .rotation-mode.hidden {
     display: none !important;
+}
+
+/* Corner buttons for Anytime mode */
+.corner-button {
+    position: fixed;
+    width: 60px;
+    height: 60px;
+    background: transparent;
+    z-index: 100;
+    cursor: pointer;
+}
+
+.corner-button.hidden {
+    display: none;
+}
+
+.corner-top-left {
+    top: 0;
+    left: 0;
+}
+
+.corner-top-right {
+    top: 0;
+    right: 0;
+}
+
+.corner-bottom-left {
+    bottom: 0;
+    left: 0;
+}
+
+.corner-bottom-right {
+    bottom: 0;
+    right: 0;
 }
 
 /* Permission Overlay */

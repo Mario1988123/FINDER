@@ -26,6 +26,7 @@ class ObjectFinder {
         this.shortPressRotation = false;
         this.longPressDelay = 3000; // 3 seconds
         this.wrongDisplayTimer = null; // Timer for wrong mark display
+        this.cornerPressTimer = null; // Timer for corner long press
 
         // Audio Context
         this.audioContext = null;
@@ -60,7 +61,11 @@ class ObjectFinder {
             sensitivity: document.getElementById('sensitivity'),
             permissionOverlay: document.getElementById('permissionOverlay'),
             requestPermission: document.getElementById('requestPermission'),
-            splashScreen: document.getElementById('splashScreen')
+            splashScreen: document.getElementById('splashScreen'),
+            cornerTopLeft: document.getElementById('cornerTopLeft'),
+            cornerTopRight: document.getElementById('cornerTopRight'),
+            cornerBottomLeft: document.getElementById('cornerBottomLeft'),
+            cornerBottomRight: document.getElementById('cornerBottomRight')
         };
 
         // Load saved configuration
@@ -144,6 +149,26 @@ class ObjectFinder {
             this.elements.tolerance.value = e.target.value;
             this.elements.toleranceValue.textContent = '±' + e.target.value + '°';
         });
+
+        // Corner buttons events (for Anytime mode)
+        const corners = [
+            this.elements.cornerTopLeft,
+            this.elements.cornerTopRight,
+            this.elements.cornerBottomLeft,
+            this.elements.cornerBottomRight
+        ];
+
+        corners.forEach(corner => {
+            corner.addEventListener('mousedown', () => this.handleCornerPress());
+            corner.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                this.handleCornerPress();
+            });
+            corner.addEventListener('mouseup', () => this.cancelCornerPress());
+            corner.addEventListener('touchend', () => this.cancelCornerPress());
+            corner.addEventListener('mouseleave', () => this.cancelCornerPress());
+            corner.addEventListener('touchcancel', () => this.cancelCornerPress());
+        });
     }
 
     startSettingsLongPress() {
@@ -167,6 +192,41 @@ class ObjectFinder {
         // Reset visual feedback
         this.elements.appTitle.style.textShadow = '';
         this.elements.appTitle.style.color = '';
+    }
+
+    handleCornerPress() {
+        if (!this.isActive || this.config.detectionMode !== 'anytime') return;
+
+        // Start 2-second timer to advance to next card
+        this.cornerPressTimer = setTimeout(() => {
+            this.advanceToNextCard();
+            if (navigator.vibrate) {
+                navigator.vibrate(100);
+            }
+        }, 2000); // 2 seconds
+    }
+
+    cancelCornerPress() {
+        if (this.cornerPressTimer) {
+            clearTimeout(this.cornerPressTimer);
+            this.cornerPressTimer = null;
+        }
+    }
+
+    advanceToNextCard() {
+        // Advance to the next card in anytime mode
+        this.currentSegment++;
+        this.foundTarget = false;
+
+        // Reset UI
+        this.elements.wrongMark.classList.remove('visible');
+        this.elements.powerButton.classList.remove('wrong');
+        this.elements.statusText.textContent = 'Toca para verificar';
+        this.updateSignal(0);
+
+        if (navigator.vibrate) {
+            navigator.vibrate([100, 50, 100]);
+        }
     }
 
     generateAngleFields(numPositions) {
@@ -271,6 +331,9 @@ class ObjectFinder {
         } else if (!this.isActive) {
             // Other modes: short press to turn on
             this.togglePower();
+        } else if (this.config.detectionMode === 'anytime') {
+            // In anytime mode: always check (multiple attempts allowed)
+            this.checkCardAnytime();
         } else if (this.config.detectionMode === 'linear-horizontal' && !this.foundTarget) {
             // In linear mode: check object
             this.checkCard();
@@ -335,6 +398,34 @@ class ObjectFinder {
         }
     }
 
+    checkCardAnytime() {
+        // In anytime mode, don't increment segment - allow multiple attempts
+        const targetIndex = this.config.targetObjectIndex;
+
+        if (this.currentSegment === targetIndex) {
+            // Found the target object!
+            this.foundTarget = true;
+            const objectName = this.config.objectNames[this.currentSegment] || `Objeto ${this.currentSegment + 1}`;
+            this.elements.statusText.textContent = `¡${objectName}!`;
+            this.updateSignal(100);
+            this.startBeeping();
+
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        } else {
+            // Wrong object - show error message
+            this.showWrongFeedback('NO ES ESA CARTA!!');
+
+            const signalStrength = this.calculateObjectSignalStrength(this.currentSegment, targetIndex);
+            this.updateSignal(signalStrength);
+
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        }
+    }
+
     showWrongFeedback(objectName) {
         // Clear previous timer if exists
         if (this.wrongDisplayTimer) {
@@ -374,9 +465,8 @@ class ObjectFinder {
             this.markedOrientation = { alpha };
             this.anywhereMarked = true;
 
-            // Update UI
-            this.elements.statusText.textContent = 'Posición marcada';
-            this.elements.powerButtonText.textContent = 'ACTIVAR';
+            // Silent UI update - no text shown
+            this.elements.powerButtonText.textContent = 'ENCENDER';
 
             if (navigator.vibrate) {
                 navigator.vibrate([100, 50, 100]);
@@ -388,10 +478,7 @@ class ObjectFinder {
 
         window.addEventListener('deviceorientation', markPosition);
 
-        // Show feedback
-        this.elements.statusText.textContent = 'Marcando...';
-        this.elements.powerButtonText.textContent = 'MARCANDO...';
-
+        // Silent feedback - only vibration
         if (navigator.vibrate) {
             navigator.vibrate(50);
         }
@@ -408,6 +495,20 @@ class ObjectFinder {
             rotationMode.forEach(el => el.classList.add('hidden'));
             linearMode.forEach(el => el.classList.remove('hidden'));
         }
+    }
+
+    showCornerButtons() {
+        this.elements.cornerTopLeft.classList.remove('hidden');
+        this.elements.cornerTopRight.classList.remove('hidden');
+        this.elements.cornerBottomLeft.classList.remove('hidden');
+        this.elements.cornerBottomRight.classList.remove('hidden');
+    }
+
+    hideCornerButtons() {
+        this.elements.cornerTopLeft.classList.add('hidden');
+        this.elements.cornerTopRight.classList.add('hidden');
+        this.elements.cornerBottomLeft.classList.add('hidden');
+        this.elements.cornerBottomRight.classList.add('hidden');
     }
 
     async togglePower() {
@@ -464,6 +565,13 @@ class ObjectFinder {
         this.elements.radar.classList.add('active');
         this.elements.wrongMark.classList.remove('visible');
 
+        // Show corner buttons if in anytime mode
+        if (this.config.detectionMode === 'anytime') {
+            this.showCornerButtons();
+        } else {
+            this.hideCornerButtons();
+        }
+
         // Start orientation sensor if in rotation or anywhere mode
         if (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere') {
             window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
@@ -488,6 +596,9 @@ class ObjectFinder {
             this.anywhereMarked = false;
             this.markedOrientation = null;
         }
+
+        // Hide corner buttons
+        this.hideCornerButtons();
 
         // Update UI
         this.elements.powerButton.classList.remove('active');
