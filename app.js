@@ -69,6 +69,22 @@ class ObjectFinder {
     }
 
     init() {
+        // Setup fullscreen mode (Cordova)
+        document.addEventListener('deviceready', () => {
+            // Hide status bar completely
+            if (typeof StatusBar !== 'undefined') {
+                StatusBar.hide();
+            }
+
+            // Enable immersive fullscreen mode
+            if (typeof AndroidFullScreen !== 'undefined') {
+                AndroidFullScreen.immersiveMode(
+                    () => console.log('Immersive mode enabled'),
+                    (err) => console.log('Immersive mode error:', err)
+                );
+            }
+        }, false);
+
         // Hide splash screen after delay
         setTimeout(() => {
             if (this.elements.splashScreen) {
