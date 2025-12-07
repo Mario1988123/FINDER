@@ -24,7 +24,7 @@
     <div class="splash-screen" id="splashScreen">
         <img src="icon-512.png" alt="Object Finder" class="splash-icon">
         <h1 class="splash-title">OBJECT FINDER</h1>
-        <p class="splash-credit">Created by elitemagic</p>
+        <p class="splash-credit">Creado por EliteMagic®</p>
     </div>
 
     <div class="container">
@@ -58,17 +58,25 @@
             <!-- Status Display -->
             <div class="status-display">
                 <div class="status-text" id="statusText">APAGADO</div>
-                <div class="angle-display" id="angleDisplay">0°</div>
+                <div class="wrong-mark" id="wrongMark">✕</div>
             </div>
         </div>
 
         <!-- Power Button -->
         <div class="power-button-container">
             <button class="power-button" id="powerButton">
-                <span class="power-icon">⏻</span>
-                <span class="power-text">ENCENDER</span>
+                <svg class="power-icon" viewBox="0 0 24 24" width="48" height="48">
+                    <path fill="currentColor" d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C18.05,7.91 19,9.9 19,12C19,15.87 15.87,19 12,19C8.13,19 5,15.87 5,12C5,9.9 5.95,7.91 7.59,6.59L6.17,5.17C4.23,6.82 3,9.26 3,12C3,16.97 7.03,21 12,21C16.97,21 21,16.97 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/>
+                </svg>
+                <span class="power-text" id="powerButtonText">ENCENDER</span>
             </button>
         </div>
+
+        <!-- Corner buttons for Anytime mode (hidden by default) -->
+        <div class="corner-button corner-top-left hidden" id="cornerTopLeft"></div>
+        <div class="corner-button corner-top-right hidden" id="cornerTopRight"></div>
+        <div class="corner-button corner-bottom-left hidden" id="cornerBottomLeft"></div>
+        <div class="corner-button corner-bottom-right hidden" id="cornerBottomRight"></div>
 
         <!-- Hidden Settings Menu -->
         <div class="settings-menu hidden" id="settingsMenu">
@@ -80,31 +88,63 @@
                     <label for="detectionMode">Modo de Detección:</label>
                     <select id="detectionMode">
                         <option value="rotation">Rotación 360° (Girar teléfono)</option>
-                        <option value="linear-horizontal">Lineal Horizontal (Deslizar →)</option>
-                        <option value="linear-vertical">Lineal Vertical (Deslizar ↓)</option>
+                        <option value="anywhere">Anywhere (Marcar posición inicial)</option>
+                        <option value="linear-horizontal">Lineal (Tocar botón)</option>
+                        <option value="anytime">Anytime (Múltiples intentos)</option>
                     </select>
                 </div>
 
                 <div class="setting-item rotation-mode">
-                    <label for="targetAngle">Ángulo objetivo (grados):</label>
-                    <input type="number" id="targetAngle" min="0" max="360" value="90">
-                    <input type="range" id="targetAngleSlider" min="0" max="360" value="90">
-                    <span class="range-value" id="angleValue">90°</span>
+                    <label for="numPositions">Número de posiciones:</label>
+                    <select id="numPositions">
+                        <option value="1">1 posición</option>
+                        <option value="2">2 posiciones</option>
+                        <option value="3">3 posiciones</option>
+                        <option value="4">4 posiciones</option>
+                        <option value="5">5 posiciones</option>
+                        <option value="6">6 posiciones</option>
+                        <option value="8">8 posiciones</option>
+                        <option value="12">12 posiciones</option>
+                    </select>
+                </div>
+
+                <div class="setting-item rotation-mode" id="anglesContainer">
+                    <!-- Campos de ángulos se generarán dinámicamente aquí -->
                 </div>
 
                 <div class="setting-item linear-mode hidden">
-                    <label for="targetPosition">Posición objetivo (cm):</label>
-                    <input type="number" id="targetPosition" min="0" max="100" value="25" step="0.5">
-                    <input type="range" id="targetPositionSlider" min="0" max="100" value="25" step="0.5">
-                    <span class="range-value" id="positionValue">25 cm</span>
-                    <p class="hint">Ancho carta poker: ~6.4 cm</p>
+                    <label for="numObjects">Número de objetos:</label>
+                    <select id="numObjects">
+                        <option value="2">2 objetos</option>
+                        <option value="3">3 objetos</option>
+                        <option value="4">4 objetos</option>
+                        <option value="5">5 objetos</option>
+                        <option value="6">6 objetos</option>
+                        <option value="7">7 objetos</option>
+                        <option value="8">8 objetos</option>
+                        <option value="9">9 objetos</option>
+                        <option value="10">10 objetos</option>
+                    </select>
                 </div>
 
-                <div class="setting-item">
-                    <label for="tolerance">Tolerancia:</label>
+                <div class="setting-item linear-mode hidden">
+                    <label for="targetObjectIndex">Objeto objetivo (posición):</label>
+                    <select id="targetObjectIndex">
+                        <!-- Se llenará dinámicamente -->
+                    </select>
+                    <p class="hint">Posición del objeto que será el correcto</p>
+                </div>
+
+                <div class="setting-item linear-mode hidden" id="objectsContainer">
+                    <!-- Campos de objetos se generarán dinámicamente aquí -->
+                </div>
+
+                <div class="setting-item rotation-mode">
+                    <label for="tolerance">Tolerancia (grados):</label>
                     <input type="number" id="tolerance" min="1" max="45" value="10">
                     <input type="range" id="toleranceSlider" min="1" max="45" value="10">
                     <span class="range-value" id="toleranceValue">±10°</span>
+                    <p class="hint">Margen de error para detección de ángulo</p>
                 </div>
 
                 <div class="setting-item">

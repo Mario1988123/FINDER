@@ -50,22 +50,28 @@ body::before {
 /* Header */
 header {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-    margin-bottom: 30px;
-    padding: 10px 0;
+    margin-top: 40px;
+    margin-bottom: 20px;
+    padding: 20px 10px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 header h1 {
     color: #fff;
-    font-size: 24px;
-    letter-spacing: 3px;
+    font-size: 28px;
+    letter-spacing: 4px;
     text-shadow: 0 0 10px rgba(120, 200, 255, 0.5);
+    transition: text-shadow 0.3s, color 0.3s;
+    text-align: center;
 }
 
 header h1:hover {
     text-shadow: 0 0 15px rgba(0, 212, 255, 0.8);
-    transition: text-shadow 0.3s;
 }
 
 /* Main Display */
@@ -233,6 +239,25 @@ header h1:hover {
     animation: pulse 1.5s infinite;
 }
 
+.wrong-mark {
+    font-size: 72px;
+    color: #ff0044;
+    font-weight: bold;
+    text-shadow: 0 0 20px rgba(255, 0, 68, 0.8);
+    display: none;
+}
+
+.wrong-mark.visible {
+    display: block;
+    animation: wrongAppear 0.3s ease-out;
+}
+
+@keyframes wrongAppear {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -252,13 +277,13 @@ header h1:hover {
 }
 
 .power-button {
-    width: 120px;
-    height: 120px;
+    width: 140px;
+    height: 140px;
     border-radius: 50%;
     border: 4px solid #fff;
     background: linear-gradient(145deg, #2a5298, #1e3c72);
     color: #fff;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: bold;
     cursor: pointer;
     display: flex;
@@ -291,20 +316,47 @@ header h1:hover {
     animation: buttonGlow 2s infinite;
 }
 
+.power-button.wrong {
+    border-color: #ff0044;
+    background: linear-gradient(145deg, #ff0044, #cc0033);
+    box-shadow:
+        0 8px 20px rgba(255, 0, 68, 0.6),
+        inset 0 -5px 15px rgba(0, 0, 0, 0.2),
+        inset 0 5px 15px rgba(255, 255, 255, 0.2);
+    animation: wrongPulse 0.5s ease-out;
+}
+
+@keyframes wrongPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
 @keyframes buttonGlow {
     0%, 100% { box-shadow: 0 8px 20px rgba(0, 255, 136, 0.4), inset 0 -5px 15px rgba(0, 0, 0, 0.2), inset 0 5px 15px rgba(255, 255, 255, 0.2); }
     50% { box-shadow: 0 8px 30px rgba(0, 255, 136, 0.8), inset 0 -5px 15px rgba(0, 0, 0, 0.2), inset 0 5px 15px rgba(255, 255, 255, 0.2); }
 }
 
 .power-icon {
-    font-size: 36px;
+    width: 48px;
+    height: 48px;
+    margin-bottom: -5px;
 }
 
 .power-text {
-    font-size: 14px;
+    font-size: 11px;
     letter-spacing: 1px;
     font-weight: bold;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.angle-display {
+    font-size: 18px;
+    color: #00d4ff;
+    font-family: 'Courier New', monospace;
+}
+
+.angle-display.hidden {
+    display: none;
 }
 
 /* Splash Screen */
@@ -356,7 +408,7 @@ header h1:hover {
     font-size: 14px;
     letter-spacing: 2px;
     opacity: 0.9;
-    margin-top: 5px;
+    margin-top: 60px;
 }
 
 /* Settings Menu */
@@ -386,6 +438,8 @@ header h1:hover {
     padding: 30px;
     width: 90%;
     max-width: 400px;
+    max-height: 80vh;
+    overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     border: 2px solid #00d4ff;
     position: relative;
@@ -474,9 +528,115 @@ header h1:hover {
     font-style: italic;
 }
 
+.angle-field {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: rgba(0, 212, 255, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+.angle-field label {
+    display: block;
+    color: #00ff88;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.angle-input {
+    width: 100%;
+    padding: 8px;
+    border-radius: 6px;
+    border: 2px solid #00d4ff;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.angle-slider {
+    width: 100%;
+    margin-bottom: 5px;
+}
+
+.angle-value {
+    display: block;
+    color: #00ff88;
+    text-align: right;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.object-field {
+    margin-bottom: 12px;
+    padding: 10px;
+    background: rgba(0, 255, 136, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(0, 255, 136, 0.3);
+}
+
+.object-field label {
+    display: block;
+    color: #00ff88;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+.object-input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: 2px solid #00ff88;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 14px;
+}
+
+.object-input:focus {
+    outline: none;
+    border-color: #00d4ff;
+    background: rgba(255, 255, 255, 0.15);
+}
+
 .linear-mode.hidden,
 .rotation-mode.hidden {
     display: none !important;
+}
+
+/* Corner buttons for Anytime mode */
+.corner-button {
+    position: fixed;
+    width: 120px;
+    height: 120px;
+    background: transparent;
+    z-index: 100;
+    cursor: pointer;
+}
+
+.corner-button.hidden {
+    display: none;
+}
+
+.corner-top-left {
+    top: 0;
+    left: 0;
+}
+
+.corner-top-right {
+    top: 0;
+    right: 0;
+}
+
+.corner-bottom-left {
+    bottom: 0;
+    left: 0;
+}
+
+.corner-bottom-right {
+    bottom: 0;
+    right: 0;
 }
 
 /* Permission Overlay */
