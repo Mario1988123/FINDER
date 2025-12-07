@@ -22,6 +22,13 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
+    - name: Install Android SDK components
+      run: |
+        yes | sdkmanager --licenses || true
+        sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+        sdkmanager --list_installed
+        echo "✓ Android SDK components installed"
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
@@ -29,6 +36,15 @@ jobs:
 
     - name: Install Cordova
       run: npm install -g cordova@12
+
+    - name: Setup Gradle 8.x
+      run: |
+        wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+        unzip -q gradle-8.5-bin.zip
+        sudo mv gradle-8.5 /opt/gradle
+        sudo ln -sf /opt/gradle/bin/gradle /usr/bin/gradle
+        gradle --version
+        echo "✓ Gradle 8.5 installed"
 
     - name: Create Cordova project
       run: |
@@ -45,23 +61,18 @@ jobs:
       run: |
         cat > build-cordova/config.xml << 'EOF'
         <?xml version='1.0' encoding='utf-8'?>
-        <widget id="com.objectfinder.app" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+        <widget id="com.objectfinder.app" version="2.1.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
             <name>Object Finder</name>
             <description>Aplicación localizadora de objetos con giroscopio</description>
             <author email="support@objectfinder.app">Object Finder Team</author>
             <content src="index.html" />
             <preference name="orientation" value="portrait" />
-            <preference name="fullscreen" value="false" />
+            <preference name="Fullscreen" value="true" />
             <preference name="DisallowOverscroll" value="true" />
-            <preference name="BackgroundColor" value="0xff1e3c72" />
+            <preference name="BackgroundColor" value="#1e3c72" />
             <platform name="android">
                 <preference name="android-minSdkVersion" value="24" />
                 <preference name="android-targetSdkVersion" value="33" />
-                <config-file target="AndroidManifest.xml" parent="/*">
-                    <uses-permission android:name="android.permission.VIBRATE" />
-                    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
-                    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
-                </config-file>
             </platform>
             <access origin="*" />
             <allow-intent href="http://*/*" />
@@ -76,9 +87,18 @@ jobs:
         cordova platform add android@12
         echo "✓ Android platform added"
 
+    - name: Add Cordova plugins
+      run: |
+        cd build-cordova
+        cordova plugin add cordova-plugin-statusbar
+        cordova plugin add cordova-plugin-fullscreen
+        echo "✓ Plugins installed"
+
     - name: Build APK with Cordova
       run: |
         cd build-cordova
+        export GRADLE_HOME=/opt/gradle
+        export PATH=$GRADLE_HOME/bin:$PATH
         cordova build android --debug --verbose
         echo "✓ APK built successfully"
 
@@ -101,65 +121,9 @@ jobs:
         path: apk-output/object-finder.apk
         retention-days: 90
 
-    - name: Get build info
-      id: build_info
+    - name: Build Summary
       run: |
-        echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
-        echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v1.0-${{ steps.build_info.outputs.date }}
-        name: Object Finder v1.0 - ${{ steps.build_info.outputs.date }}
-        body: |
-          ## 🎯 Object Finder - Localizador con Giroscopio
-
-          **Build:** ${{ steps.build_info.outputs.date }}
-          **Commit:** ${{ steps.build_info.outputs.sha_short }}
-
-          ### 📥 Instalación:
-
-          1. **Descarga** el archivo `object-finder.apk`
-          2. **Envíalo a tu móvil** (WhatsApp, Email, USB, etc.)
-          3. **Habilita** "Instalar apps desconocidas" en Ajustes → Seguridad
-          4. **Abre** el APK y confirma instalación
-          5. **¡Listo!** Abre la app y presiona el botón de encendido
-
-          ### ✨ Características:
-
-          - 📍 **Detección por giroscopio** - Gira el dispositivo para encontrar el objetivo
-          - 📊 **Señal visual animada** - Barras de señal y radar con efectos de neón
-          - 🔊 **Pitidos de proximidad** - Se acelera al acercarte al objetivo
-          - ⚙️ **Configuración personalizable**:
-            - Ángulo objetivo (0-360°)
-            - Tolerancia (±1-45°)
-            - Sensibilidad (Baja/Media/Alta)
-          - 🎨 **Diseño moderno** - Interfaz estilo radar con animaciones fluidas
-          - 💾 **Configuración persistente** - Guarda tus ajustes
-
-          ### 🎮 Uso:
-
-          1. Presiona el botón **⏻ ENCENDER**
-          2. Permite acceso al sensor de orientación
-          3. Gira el dispositivo lentamente
-          4. Observa cómo aumenta la señal
-          5. ¡Escucha el pitido cuando encuentres el objetivo!
-
-          ### ⚙️ Configuración:
-
-          Toca el ícono **⚙️** (arriba derecha) para:
-          - Cambiar el ángulo donde se "encuentra" el objeto
-          - Ajustar la tolerancia (más fácil o difícil)
-          - Modificar la sensibilidad de detección
-
-          ---
-
-          **Tamaño APK:** ~4-8 MB
-          **Android mínimo:** 7.0 (API 24)
-          **Permisos:** Sensor de orientación y vibración
-        files: apk-output/object-finder.apk
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        echo "✅ APK compilado exitosamente!"
+        echo "📦 Archivo: object-finder.apk"
+        echo "📥 Descarga desde: GitHub Actions → Artifacts → object-finder-apk"
+        ls -lh apk-output/object-finder.apk
