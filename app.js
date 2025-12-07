@@ -1,10 +1,12 @@
-// Object Finder App - Gyroscope-based Object Locator
+// Object Finder App - Multi-Mode Object Locator
 
 class ObjectFinder {
     constructor() {
         // Configuration
         this.config = {
+            detectionMode: 'rotation', // rotation, linear-horizontal, linear-vertical
             targetAngle: 90,
+            targetPosition: 25, // in cm for linear modes
             tolerance: 10,
             sensitivity: 'medium'
         };
@@ -12,13 +14,24 @@ class ObjectFinder {
         // State
         this.isActive = false;
         this.currentAngle = 0;
+        this.currentPosition = 0; // in cm for linear modes
         this.initialOrientation = null;
+        this.initialPosition = null;
         this.signalStrength = 0;
         this.isBeeping = false;
 
         // Audio Context for beeping
         this.audioContext = null;
         this.beepInterval = null;
+
+        // Accelerometer data for linear detection
+        this.accelerometerData = { x: 0, y: 0, z: 0 };
+        this.velocity = { x: 0, y: 0 };
+        this.position = { x: 0, y: 0 };
+        this.lastTimestamp = null;
+
+        // Constants
+        this.POKER_CARD_WIDTH = 6.4; // cm
 
         // DOM Elements
         this.elements = {
@@ -28,19 +41,24 @@ class ObjectFinder {
             angleDisplay: document.getElementById('angleDisplay'),
             bars: document.querySelectorAll('.bar'),
             radar: document.querySelector('.radar'),
-            settingsIcon: document.getElementById('settingsIcon'),
+            appTitle: document.getElementById('appTitle'),
             settingsMenu: document.getElementById('settingsMenu'),
             closeSettings: document.getElementById('closeSettings'),
             saveSettings: document.getElementById('saveSettings'),
+            detectionMode: document.getElementById('detectionMode'),
             targetAngle: document.getElementById('targetAngle'),
             targetAngleSlider: document.getElementById('targetAngleSlider'),
             angleValue: document.getElementById('angleValue'),
+            targetPosition: document.getElementById('targetPosition'),
+            targetPositionSlider: document.getElementById('targetPositionSlider'),
+            positionValue: document.getElementById('positionValue'),
             tolerance: document.getElementById('tolerance'),
             toleranceSlider: document.getElementById('toleranceSlider'),
             toleranceValue: document.getElementById('toleranceValue'),
             sensitivity: document.getElementById('sensitivity'),
             permissionOverlay: document.getElementById('permissionOverlay'),
-            requestPermission: document.getElementById('requestPermission')
+            requestPermission: document.getElementById('requestPermission'),
+            splashScreen: document.getElementById('splashScreen')
         };
 
         // Load saved configuration
@@ -51,13 +69,25 @@ class ObjectFinder {
     }
 
     init() {
+        // Hide splash screen after delay
+        setTimeout(() => {
+            if (this.elements.splashScreen) {
+                this.elements.splashScreen.remove();
+            }
+        }, 2800);
+
         // Event listeners
         this.elements.powerButton.addEventListener('click', () => this.togglePower());
-        this.elements.settingsIcon.addEventListener('click', () => this.openSettings());
+        this.elements.appTitle.addEventListener('click', () => this.openSettings());
         this.elements.closeSettings.addEventListener('click', () => this.closeSettings());
         this.elements.saveSettings.addEventListener('click', () => this.saveSettings());
 
-        // Settings synchronization
+        // Detection mode change
+        this.elements.detectionMode.addEventListener('change', (e) => {
+            this.updateModeVisibility(e.target.value);
+        });
+
+        // Settings synchronization - Angle
         this.elements.targetAngle.addEventListener('input', (e) => {
             this.elements.targetAngleSlider.value = e.target.value;
             this.elements.angleValue.textContent = e.target.value + '°';
@@ -68,6 +98,18 @@ class ObjectFinder {
             this.elements.angleValue.textContent = e.target.value + '°';
         });
 
+        // Settings synchronization - Position
+        this.elements.targetPosition.addEventListener('input', (e) => {
+            this.elements.targetPositionSlider.value = e.target.value;
+            this.elements.positionValue.textContent = e.target.value + ' cm';
+        });
+
+        this.elements.targetPositionSlider.addEventListener('input', (e) => {
+            this.elements.targetPosition.value = e.target.value;
+            this.elements.positionValue.textContent = e.target.value + ' cm';
+        });
+
+        // Settings synchronization - Tolerance
         this.elements.tolerance.addEventListener('input', (e) => {
             this.elements.toleranceSlider.value = e.target.value;
             this.elements.toleranceValue.textContent = '±' + e.target.value + '°';
@@ -78,9 +120,22 @@ class ObjectFinder {
             this.elements.toleranceValue.textContent = '±' + e.target.value + '°';
         });
 
-        // Check if DeviceOrientation is supported
-        if (!window.DeviceOrientationEvent) {
-            alert('Tu dispositivo no soporta el sensor de orientación.');
+        // Check if sensors are supported
+        if (!window.DeviceOrientationEvent && !window.DeviceMotionEvent) {
+            alert('Tu dispositivo no soporta los sensores necesarios.');
+        }
+    }
+
+    updateModeVisibility(mode) {
+        const rotationMode = document.querySelectorAll('.rotation-mode');
+        const linearMode = document.querySelectorAll('.linear-mode');
+
+        if (mode === 'rotation') {
+            rotationMode.forEach(el => el.classList.remove('hidden'));
+            linearMode.forEach(el => el.classList.add('hidden'));
+        } else {
+            rotationMode.forEach(el => el.classList.add('hidden'));
+            linearMode.forEach(el => el.classList.remove('hidden'));
         }
     }
 
@@ -91,13 +146,28 @@ class ObjectFinder {
                 try {
                     const permission = await DeviceOrientationEvent.requestPermission();
                     if (permission !== 'granted') {
-                        alert('Permiso denegado para acceder al sensor de orientación.');
+                        alert('Permiso denegado para acceder a los sensores.');
                         return;
                     }
                 } catch (error) {
                     console.error('Error requesting permission:', error);
                     this.elements.permissionOverlay.classList.remove('hidden');
                     return;
+                }
+            }
+
+            // Request motion permission if in linear mode
+            if (this.config.detectionMode !== 'rotation') {
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    try {
+                        const permission = await DeviceMotionEvent.requestPermission();
+                        if (permission !== 'granted') {
+                            alert('Permiso denegado para acceder al acelerómetro.');
+                            return;
+                        }
+                    } catch (error) {
+                        console.error('Error requesting motion permission:', error);
+                    }
                 }
             }
 
@@ -110,6 +180,10 @@ class ObjectFinder {
     startFinder() {
         this.isActive = true;
         this.initialOrientation = null;
+        this.initialPosition = null;
+        this.position = { x: 0, y: 0 };
+        this.velocity = { x: 0, y: 0 };
+        this.lastTimestamp = null;
 
         // Initialize audio context
         if (!this.audioContext) {
@@ -123,17 +197,22 @@ class ObjectFinder {
         this.elements.statusText.classList.add('active');
         this.elements.radar.classList.add('active');
 
-        // Start listening to orientation
-        window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
+        // Start appropriate sensor based on mode
+        if (this.config.detectionMode === 'rotation') {
+            window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
+        } else {
+            window.addEventListener('devicemotion', this.handleMotion.bind(this));
+        }
 
-        console.log('Finder started - Target angle:', this.config.targetAngle);
+        console.log('Finder started - Mode:', this.config.detectionMode);
     }
 
     stopFinder() {
         this.isActive = false;
 
-        // Stop listening to orientation
+        // Stop listening to sensors
         window.removeEventListener('deviceorientation', this.handleOrientation.bind(this));
+        window.removeEventListener('devicemotion', this.handleMotion.bind(this));
 
         // Stop beeping
         this.stopBeeping();
@@ -151,30 +230,19 @@ class ObjectFinder {
     }
 
     handleOrientation(event) {
-        if (!this.isActive) return;
+        if (!this.isActive || this.config.detectionMode !== 'rotation') return;
 
         // Get alpha (compass heading) - ranges from 0 to 360
         let alpha = event.alpha || 0;
 
-        // Get beta (front-to-back tilt) - ranges from -180 to 180
-        let beta = event.beta || 0;
-
-        // Get gamma (left-to-right tilt) - ranges from -90 to 90
-        let gamma = event.gamma || 0;
-
         // Store initial orientation on first read
         if (this.initialOrientation === null) {
-            this.initialOrientation = { alpha, beta, gamma };
+            this.initialOrientation = { alpha };
             console.log('Initial orientation:', this.initialOrientation);
         }
 
         // Calculate relative rotation from initial position
-        // Using alpha (compass) as primary orientation
         let relativeAngle = this.normalizeAngle(alpha - this.initialOrientation.alpha);
-
-        // Also consider device tilt for more responsive detection
-        // Combine rotation with tilt for better detection
-        const tiltFactor = Math.abs(gamma) / 90; // 0 to 1
 
         this.currentAngle = relativeAngle;
         this.elements.angleDisplay.textContent = Math.round(relativeAngle) + '°';
@@ -185,6 +253,74 @@ class ObjectFinder {
 
         // Check if we're at target angle
         if (this.isAtTarget(relativeAngle)) {
+            if (!this.isBeeping) {
+                this.startBeeping();
+                this.elements.statusText.textContent = '¡ENCONTRADO!';
+            }
+        } else {
+            if (this.isBeeping) {
+                this.stopBeeping();
+                this.elements.statusText.textContent = 'BUSCANDO...';
+            }
+        }
+    }
+
+    handleMotion(event) {
+        if (!this.isActive || this.config.detectionMode === 'rotation') return;
+
+        const acceleration = event.accelerationIncludingGravity;
+        if (!acceleration) return;
+
+        const now = Date.now();
+        if (this.lastTimestamp === null) {
+            this.lastTimestamp = now;
+            return;
+        }
+
+        const dt = (now - this.lastTimestamp) / 1000; // Convert to seconds
+        this.lastTimestamp = now;
+
+        // Get acceleration values (remove gravity ~9.8 m/s²)
+        let ax = acceleration.x || 0;
+        let ay = acceleration.y || 0;
+
+        // Simple high-pass filter to remove gravity
+        const alpha = 0.8;
+        this.accelerometerData.x = alpha * this.accelerometerData.x + (1 - alpha) * ax;
+        this.accelerometerData.y = alpha * this.accelerometerData.y + (1 - alpha) * ay;
+
+        ax = ax - this.accelerometerData.x;
+        ay = ay - this.accelerometerData.y;
+
+        // Integrate acceleration to get velocity (m/s)
+        this.velocity.x += ax * dt;
+        this.velocity.y += ay * dt;
+
+        // Apply damping to velocity
+        this.velocity.x *= 0.95;
+        this.velocity.y *= 0.95;
+
+        // Integrate velocity to get position (m)
+        this.position.x += this.velocity.x * dt;
+        this.position.y += this.velocity.y * dt;
+
+        // Convert to cm
+        let positionCm;
+        if (this.config.detectionMode === 'linear-horizontal') {
+            positionCm = Math.abs(this.position.x * 100);
+        } else { // linear-vertical
+            positionCm = Math.abs(this.position.y * 100);
+        }
+
+        this.currentPosition = positionCm;
+        this.elements.angleDisplay.textContent = positionCm.toFixed(1) + ' cm';
+
+        // Calculate signal strength based on proximity to target position
+        const signalStrength = this.calculatePositionSignalStrength(positionCm);
+        this.updateSignal(signalStrength);
+
+        // Check if we're at target position
+        if (this.isAtTargetPosition(positionCm)) {
             if (!this.isBeeping) {
                 this.startBeeping();
                 this.elements.statusText.textContent = '¡ENCONTRADO!';
@@ -214,8 +350,33 @@ class ObjectFinder {
         }
 
         // Map difference to signal strength (0-100)
-        // The closer to target, the higher the signal
-        const maxRange = 180; // Maximum possible difference
+        const maxRange = 180;
+        let strength = 100 - (diff / maxRange * 100);
+
+        // Apply sensitivity multiplier
+        const sensitivityFactors = {
+            low: 0.7,
+            medium: 1.0,
+            high: 1.3
+        };
+
+        strength *= sensitivityFactors[this.config.sensitivity];
+
+        // Clamp to 0-100
+        strength = Math.max(0, Math.min(100, strength));
+
+        return strength;
+    }
+
+    calculatePositionSignalStrength(currentPosition) {
+        const target = this.config.targetPosition;
+
+        // Calculate distance from target
+        const diff = Math.abs(currentPosition - target);
+
+        // Map difference to signal strength (0-100)
+        // Assuming max range of 100cm
+        const maxRange = 100;
         let strength = 100 - (diff / maxRange * 100);
 
         // Apply sensitivity multiplier
@@ -246,6 +407,15 @@ class ObjectFinder {
         return diff <= tolerance;
     }
 
+    isAtTargetPosition(currentPosition) {
+        const target = this.config.targetPosition;
+        const tolerance = this.config.tolerance / 10; // Convert degrees to cm (rough approximation)
+
+        const diff = Math.abs(currentPosition - target);
+
+        return diff <= tolerance;
+    }
+
     updateSignal(strength) {
         this.signalStrength = strength;
         this.elements.signalStrength.textContent = Math.round(strength);
@@ -269,8 +439,8 @@ class ObjectFinder {
         this.isBeeping = true;
 
         // Calculate beep frequency based on signal strength
-        const baseInterval = 1000; // Base interval in ms
-        const minInterval = 100; // Minimum interval at 100% signal
+        const baseInterval = 1000;
+        const minInterval = 100;
         const beepSpeed = baseInterval - ((this.signalStrength / 100) * (baseInterval - minInterval));
 
         this.beep();
@@ -299,8 +469,8 @@ class ObjectFinder {
         gainNode.connect(this.audioContext.destination);
 
         // Beep parameters
-        const frequency = 800 + (this.signalStrength * 10); // Higher pitch for stronger signal
-        const duration = 0.1; // Beep duration in seconds
+        const frequency = 800 + (this.signalStrength * 10);
+        const duration = 0.1;
 
         oscillator.frequency.value = frequency;
         oscillator.type = 'sine';
@@ -316,9 +486,16 @@ class ObjectFinder {
         this.elements.settingsMenu.classList.remove('hidden');
 
         // Load current config into form
+        this.elements.detectionMode.value = this.config.detectionMode;
+        this.updateModeVisibility(this.config.detectionMode);
+
         this.elements.targetAngle.value = this.config.targetAngle;
         this.elements.targetAngleSlider.value = this.config.targetAngle;
         this.elements.angleValue.textContent = this.config.targetAngle + '°';
+
+        this.elements.targetPosition.value = this.config.targetPosition;
+        this.elements.targetPositionSlider.value = this.config.targetPosition;
+        this.elements.positionValue.textContent = this.config.targetPosition + ' cm';
 
         this.elements.tolerance.value = this.config.tolerance;
         this.elements.toleranceSlider.value = this.config.tolerance;
@@ -332,7 +509,9 @@ class ObjectFinder {
     }
 
     saveSettings() {
+        this.config.detectionMode = this.elements.detectionMode.value;
         this.config.targetAngle = parseInt(this.elements.targetAngle.value);
+        this.config.targetPosition = parseFloat(this.elements.targetPosition.value);
         this.config.tolerance = parseInt(this.elements.tolerance.value);
         this.config.sensitivity = this.elements.sensitivity.value;
 

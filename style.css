@@ -4,15 +4,23 @@
     box-sizing: border-box;
 }
 
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    position: fixed;
+}
+
 body {
     font-family: 'Arial', sans-serif;
     background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #1e3c72 100%);
     min-height: 100vh;
+    min-height: -webkit-fill-available;
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow: hidden;
     position: relative;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 body::before {
@@ -55,15 +63,9 @@ header h1 {
     text-shadow: 0 0 10px rgba(120, 200, 255, 0.5);
 }
 
-.settings-icon {
-    font-size: 28px;
-    cursor: pointer;
-    transition: transform 0.3s;
-    filter: drop-shadow(0 0 5px rgba(120, 200, 255, 0.5));
-}
-
-.settings-icon:active {
-    transform: rotate(90deg);
+header h1:hover {
+    text-shadow: 0 0 15px rgba(0, 212, 255, 0.8);
+    transition: text-shadow 0.3s;
 }
 
 /* Main Display */
@@ -299,8 +301,62 @@ header h1 {
 }
 
 .power-text {
-    font-size: 12px;
+    font-size: 14px;
     letter-spacing: 1px;
+    font-weight: bold;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Splash Screen */
+.splash-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #1e3c72 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    animation: fadeOut 0.8s ease-out 2s forwards;
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+.splash-icon {
+    width: 150px;
+    height: 150px;
+    margin-bottom: 20px;
+    filter: drop-shadow(0 0 30px rgba(0, 212, 255, 0.6));
+    animation: splashIconPulse 2s ease-in-out infinite;
+}
+
+@keyframes splashIconPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.splash-title {
+    color: #fff;
+    font-size: 32px;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+    margin-bottom: 10px;
+}
+
+.splash-credit {
+    color: #00d4ff;
+    font-size: 14px;
+    letter-spacing: 2px;
+    opacity: 0.9;
+    margin-top: 5px;
 }
 
 /* Settings Menu */
@@ -409,6 +465,18 @@ header h1 {
 
 .save-button:active {
     transform: scale(0.98);
+}
+
+.hint {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    margin-top: 5px;
+    font-style: italic;
+}
+
+.linear-mode.hidden,
+.rotation-mode.hidden {
+    display: none !important;
 }
 
 /* Permission Overlay */
