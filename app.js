@@ -1,4 +1,4 @@
-// Object Finder App - Multi-Mode Object Locator v2.3
+// Object Finder App - Multi-Mode Object Locator v2.5
 
 class ObjectFinder {
     constructor() {
@@ -6,7 +6,8 @@ class ObjectFinder {
         this.config = {
             detectionMode: 'rotation',
             targetAngles: [90], // Array of target angles
-            targetSegment: 4,
+            objectNames: ['Objeto 1', 'Objeto 2', 'Objeto 3'], // Array of object names for linear mode
+            targetObjectIndex: 2, // Which object is the correct one (0-indexed)
             tolerance: 10,
             sensitivity: 'medium'
         };
@@ -16,12 +17,15 @@ class ObjectFinder {
         this.currentAngle = 0;
         this.currentSegment = 0;
         this.initialOrientation = null;
+        this.markedOrientation = null; // For 'anywhere' mode
+        this.anywhereMarked = false; // Flag for 'anywhere' mode
         this.signalStrength = 0;
         this.isBeeping = false;
         this.foundTarget = false;
         this.longPressTimer = null;
         this.shortPressRotation = false;
         this.longPressDelay = 3000; // 3 seconds
+        this.wrongDisplayTimer = null; // Timer for wrong mark display
 
         // Audio Context
         this.audioContext = null;
@@ -47,9 +51,9 @@ class ObjectFinder {
             detectionMode: document.getElementById('detectionMode'),
             numPositions: document.getElementById('numPositions'),
             anglesContainer: document.getElementById('anglesContainer'),
-            targetPosition: document.getElementById('targetPosition'),
-            targetPositionSlider: document.getElementById('targetPositionSlider'),
-            positionValue: document.getElementById('positionValue'),
+            numObjects: document.getElementById('numObjects'),
+            targetObjectIndex: document.getElementById('targetObjectIndex'),
+            objectsContainer: document.getElementById('objectsContainer'),
             tolerance: document.getElementById('tolerance'),
             toleranceSlider: document.getElementById('toleranceSlider'),
             toleranceValue: document.getElementById('toleranceValue'),
@@ -120,21 +124,15 @@ class ObjectFinder {
             this.updateModeVisibility(e.target.value);
         });
 
-        // Number of positions change
+        // Number of positions change (rotation mode)
         this.elements.numPositions.addEventListener('change', (e) => {
             this.generateAngleFields(parseInt(e.target.value));
         });
 
-        this.elements.targetPosition.addEventListener('input', (e) => {
-            this.elements.targetPositionSlider.value = e.target.value;
-            const segment = Math.round(e.target.value / this.POKER_CARD_WIDTH);
-            this.elements.positionValue.textContent = `Carta ${segment} (${e.target.value} cm)`;
-        });
-
-        this.elements.targetPositionSlider.addEventListener('input', (e) => {
-            this.elements.targetPosition.value = e.target.value;
-            const segment = Math.round(e.target.value / this.POKER_CARD_WIDTH);
-            this.elements.positionValue.textContent = `Carta ${segment} (${e.target.value} cm)`;
+        // Number of objects change (linear mode)
+        this.elements.numObjects.addEventListener('change', (e) => {
+            this.generateObjectFields(parseInt(e.target.value));
+            this.updateTargetObjectOptions(parseInt(e.target.value));
         });
 
         this.elements.tolerance.addEventListener('input', (e) => {
@@ -214,15 +212,70 @@ class ObjectFinder {
         }
     }
 
+    generateObjectFields(numObjects) {
+        const container = this.elements.objectsContainer;
+        container.innerHTML = '';
+
+        for (let i = 0; i < numObjects; i++) {
+            const defaultName = this.config.objectNames[i] || `Objeto ${i + 1}`;
+
+            const fieldHTML = `
+                <div class="object-field">
+                    <label for="object${i}">Objeto ${i + 1}:</label>
+                    <input type="text" id="object${i}" class="object-input"
+                           value="${defaultName}" data-index="${i}" maxlength="30"
+                           placeholder="Nombre del objeto">
+                </div>
+            `;
+            container.innerHTML += fieldHTML;
+        }
+
+        // Add event listeners for each field
+        for (let i = 0; i < numObjects; i++) {
+            const input = document.getElementById(`object${i}`);
+            input.addEventListener('input', (e) => {
+                // Update in real-time (optional)
+            });
+        }
+    }
+
+    updateTargetObjectOptions(numObjects) {
+        const select = this.elements.targetObjectIndex;
+        select.innerHTML = '';
+
+        for (let i = 0; i < numObjects; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = `Objeto ${i + 1}`;
+            select.appendChild(option);
+        }
+
+        // Set default or current value
+        if (this.config.targetObjectIndex < numObjects) {
+            select.value = this.config.targetObjectIndex;
+        } else {
+            select.value = numObjects - 1;
+        }
+    }
+
     handlePowerButtonDown() {
-        if (!this.isActive) {
-            // Short press to turn on
+        // Mode "Anywhere": first click marks position, second click activates
+        if (this.config.detectionMode === 'anywhere' && !this.isActive) {
+            if (!this.anywhereMarked) {
+                // First click: mark the initial angle
+                this.markAnywherePosition();
+            } else {
+                // Second click: activate finder
+                this.togglePower();
+            }
+        } else if (!this.isActive) {
+            // Other modes: short press to turn on
             this.togglePower();
-        } else if (this.config.detectionMode !== 'rotation' && !this.foundTarget) {
-            // In linear mode: check card
+        } else if (this.config.detectionMode === 'linear-horizontal' && !this.foundTarget) {
+            // In linear mode: check object
             this.checkCard();
-        } else if (this.config.detectionMode === 'rotation') {
-            // In rotation mode: prepare for click to turn off (no long press)
+        } else if (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere') {
+            // In rotation/anywhere mode: prepare for click to turn off (no long press)
             this.shortPressRotation = true;
         } else {
             // In linear mode after found: long press to turn off
@@ -255,12 +308,13 @@ class ObjectFinder {
     checkCard() {
         this.currentSegment++;
 
-        const targetSegment = Math.round(parseFloat(this.elements.targetPosition.value) / this.POKER_CARD_WIDTH);
+        const targetIndex = this.config.targetObjectIndex;
 
-        if (this.currentSegment === targetSegment) {
-            // Found the target card!
+        if (this.currentSegment - 1 === targetIndex) {
+            // Found the target object!
             this.foundTarget = true;
-            this.elements.statusText.textContent = '¡ENCONTRADO!';
+            const objectName = this.config.objectNames[this.currentSegment - 1] || `Objeto ${this.currentSegment}`;
+            this.elements.statusText.textContent = `¡${objectName}!`;
             this.updateSignal(100);
             this.startBeeping();
 
@@ -268,13 +322,11 @@ class ObjectFinder {
                 navigator.vibrate([200, 100, 200]);
             }
         } else {
-            // Wrong card
-            this.showWrongFeedback();
+            // Wrong object
+            const objectName = this.config.objectNames[this.currentSegment - 1] || `Objeto ${this.currentSegment}`;
+            this.showWrongFeedback(objectName);
 
-            const positionCm = this.currentSegment * this.POKER_CARD_WIDTH;
-            this.elements.statusText.textContent = `Carta ${this.currentSegment}`;
-
-            const signalStrength = this.calculateSegmentSignalStrength(this.currentSegment, targetSegment);
+            const signalStrength = this.calculateObjectSignalStrength(this.currentSegment - 1, targetIndex);
             this.updateSignal(signalStrength);
 
             if (navigator.vibrate) {
@@ -283,23 +335,73 @@ class ObjectFinder {
         }
     }
 
-    showWrongFeedback() {
-        // Show red theme
+    showWrongFeedback(objectName) {
+        // Clear previous timer if exists
+        if (this.wrongDisplayTimer) {
+            clearTimeout(this.wrongDisplayTimer);
+        }
+
+        // Show red theme and object name
         this.elements.powerButton.classList.add('wrong');
         this.elements.wrongMark.classList.add('visible');
+        this.elements.statusText.textContent = objectName || 'Incorrecto';
 
-        // Hide after 500ms
-        setTimeout(() => {
+        // Hide after 1500ms (1.5 seconds)
+        this.wrongDisplayTimer = setTimeout(() => {
             this.elements.powerButton.classList.remove('wrong');
             this.elements.wrongMark.classList.remove('visible');
-        }, 500);
+            this.elements.statusText.textContent = 'Toca para verificar';
+        }, 1500);
+    }
+
+    markAnywherePosition() {
+        // Request access to orientation sensor
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            DeviceOrientationEvent.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    this.startMarkingPosition();
+                }
+            }).catch(console.error);
+        } else {
+            this.startMarkingPosition();
+        }
+    }
+
+    startMarkingPosition() {
+        // Listen to orientation event once to mark the position
+        const markPosition = (event) => {
+            let alpha = event.alpha || 0;
+            this.markedOrientation = { alpha };
+            this.anywhereMarked = true;
+
+            // Update UI
+            this.elements.statusText.textContent = 'Posición marcada';
+            this.elements.powerButtonText.textContent = 'ACTIVAR';
+
+            if (navigator.vibrate) {
+                navigator.vibrate([100, 50, 100]);
+            }
+
+            // Remove listener
+            window.removeEventListener('deviceorientation', markPosition);
+        };
+
+        window.addEventListener('deviceorientation', markPosition);
+
+        // Show feedback
+        this.elements.statusText.textContent = 'Marcando...';
+        this.elements.powerButtonText.textContent = 'MARCANDO...';
+
+        if (navigator.vibrate) {
+            navigator.vibrate(50);
+        }
     }
 
     updateModeVisibility(mode) {
         const rotationMode = document.querySelectorAll('.rotation-mode');
         const linearMode = document.querySelectorAll('.linear-mode');
 
-        if (mode === 'rotation') {
+        if (mode === 'rotation' || mode === 'anywhere') {
             rotationMode.forEach(el => el.classList.remove('hidden'));
             linearMode.forEach(el => el.classList.add('hidden'));
         } else {
@@ -311,7 +413,7 @@ class ObjectFinder {
     async togglePower() {
         if (!this.isActive) {
             // Request permission if needed
-            if (this.config.detectionMode === 'rotation') {
+            if (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere') {
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                     try {
                         const permission = await DeviceOrientationEvent.requestPermission();
@@ -333,9 +435,15 @@ class ObjectFinder {
 
     startFinder() {
         this.isActive = true;
-        this.initialOrientation = null;
         this.currentSegment = 0;
         this.foundTarget = false;
+
+        // For "anywhere" mode, use marked orientation as initial
+        if (this.config.detectionMode === 'anywhere' && this.anywhereMarked) {
+            this.initialOrientation = this.markedOrientation;
+        } else {
+            this.initialOrientation = null;
+        }
 
         // Initialize audio context
         if (!this.audioContext) {
@@ -345,13 +453,19 @@ class ObjectFinder {
         // Update UI
         this.elements.powerButton.classList.add('active');
         this.elements.powerButtonText.textContent = 'APAGAR';
-        this.elements.statusText.textContent = this.config.detectionMode === 'rotation' ? 'BUSCANDO...' : 'Toca para verificar';
+
+        if (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere') {
+            this.elements.statusText.textContent = 'BUSCANDO...';
+        } else {
+            this.elements.statusText.textContent = 'Toca para verificar';
+        }
+
         this.elements.statusText.classList.add('active');
         this.elements.radar.classList.add('active');
         this.elements.wrongMark.classList.remove('visible');
 
-        // Start orientation sensor if in rotation mode
-        if (this.config.detectionMode === 'rotation') {
+        // Start orientation sensor if in rotation or anywhere mode
+        if (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere') {
             window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
         } else {
             this.updateSignal(0);
@@ -369,6 +483,12 @@ class ObjectFinder {
         // Stop beeping
         this.stopBeeping();
 
+        // Reset anywhere mode state
+        if (this.config.detectionMode === 'anywhere') {
+            this.anywhereMarked = false;
+            this.markedOrientation = null;
+        }
+
         // Update UI
         this.elements.powerButton.classList.remove('active');
         this.elements.powerButton.classList.remove('wrong');
@@ -383,7 +503,8 @@ class ObjectFinder {
     }
 
     handleOrientation(event) {
-        if (!this.isActive || this.config.detectionMode !== 'rotation') return;
+        if (!this.isActive) return;
+        if (this.config.detectionMode !== 'rotation' && this.config.detectionMode !== 'anywhere') return;
 
         let alpha = event.alpha || 0;
 
@@ -452,9 +573,9 @@ class ObjectFinder {
         return Math.max(0, Math.min(100, strength));
     }
 
-    calculateSegmentSignalStrength(currentSegment, targetSegment) {
-        const diff = Math.abs(currentSegment - targetSegment);
-        const maxRange = 15;
+    calculateObjectSignalStrength(currentIndex, targetIndex) {
+        const diff = Math.abs(currentIndex - targetIndex);
+        const maxRange = this.config.objectNames.length;
         let strength = 100 - (diff / maxRange * 100);
 
         const sensitivityFactors = {
@@ -483,7 +604,7 @@ class ObjectFinder {
         });
 
         // Dynamic beeping based on signal strength
-        if (this.isActive && this.config.detectionMode === 'rotation') {
+        if (this.isActive && (this.config.detectionMode === 'rotation' || this.config.detectionMode === 'anywhere')) {
             if (strength > 0) {
                 if (!this.isBeeping) {
                     this.startBeeping();
@@ -513,10 +634,17 @@ class ObjectFinder {
     scheduleNextBeep() {
         if (!this.isBeeping) return;
 
-        // Calculate interval: 2000ms at 0% down to 100ms at 100%
-        const maxInterval = 2000; // 2 seconds
-        const minInterval = 100;  // 0.1 seconds
-        const beepSpeed = maxInterval - ((this.signalStrength / 100) * (maxInterval - minInterval));
+        // Calculate interval: 800ms at 0% down to 150ms at 92-100%
+        const maxInterval = 800;  // 0.8 seconds
+        const minInterval = 150;  // 0.15 seconds
+
+        // Plateau effect: from 92% to 100%, keep minimum interval
+        let effectiveStrength = this.signalStrength;
+        if (effectiveStrength > 92) {
+            effectiveStrength = 92;
+        }
+
+        const beepSpeed = maxInterval - ((effectiveStrength / 100) * (maxInterval - minInterval));
 
         this.beepInterval = setTimeout(() => {
             if (this.isBeeping) {
@@ -544,14 +672,22 @@ class ObjectFinder {
         oscillator.connect(gainNode);
         gainNode.connect(this.audioContext.destination);
 
-        // Frequency increases with signal: 400Hz at 0% to 1600Hz at 100%
-        const frequency = 400 + (this.signalStrength * 12);
+        // Constant frequency (same tone)
+        const frequency = 800;  // Fixed at 800Hz
 
-        // Duration decreases with signal: 0.08s at 0% to 0.15s at 100%
-        const duration = 0.08 + (this.signalStrength / 100 * 0.07);
+        // Fixed duration
+        const duration = 0.12;
 
-        // Volume increases with signal: 0.15 at 0% to 0.4 at 100%
-        const volume = 0.15 + (this.signalStrength / 100 * 0.25);
+        // Volume increases with signal: 0.10 at 0% to 0.50 at 100%
+        // Plateau effect: from 92% to 100%, volume changes minimally
+        let effectiveStrength = this.signalStrength;
+        if (effectiveStrength > 92) {
+            // Subtle increase from 92% to 100%
+            const plateauProgress = (this.signalStrength - 92) / 8; // 0 to 1
+            effectiveStrength = 92 + (plateauProgress * 2); // 92 to 94
+        }
+
+        const volume = 0.10 + (effectiveStrength / 100 * 0.40);
 
         oscillator.frequency.value = frequency;
         oscillator.type = 'sine';
@@ -569,14 +705,15 @@ class ObjectFinder {
         this.elements.detectionMode.value = this.config.detectionMode;
         this.updateModeVisibility(this.config.detectionMode);
 
-        // Set number of positions and generate angle fields
+        // Set number of positions and generate angle fields (rotation/anywhere mode)
         this.elements.numPositions.value = this.config.targetAngles.length;
         this.generateAngleFields(this.config.targetAngles.length);
 
-        const targetPos = this.config.targetSegment * this.POKER_CARD_WIDTH;
-        this.elements.targetPosition.value = targetPos;
-        this.elements.targetPositionSlider.value = targetPos;
-        this.elements.positionValue.textContent = `Carta ${this.config.targetSegment} (${targetPos} cm)`;
+        // Set number of objects and generate object fields (linear mode)
+        this.elements.numObjects.value = this.config.objectNames.length;
+        this.generateObjectFields(this.config.objectNames.length);
+        this.updateTargetObjectOptions(this.config.objectNames.length);
+        this.elements.targetObjectIndex.value = this.config.targetObjectIndex;
 
         this.elements.tolerance.value = this.config.tolerance;
         this.elements.toleranceSlider.value = this.config.tolerance;
@@ -592,7 +729,7 @@ class ObjectFinder {
     saveSettings() {
         this.config.detectionMode = this.elements.detectionMode.value;
 
-        // Save all angle values
+        // Save all angle values (rotation/anywhere mode)
         const numPositions = parseInt(this.elements.numPositions.value);
         this.config.targetAngles = [];
         for (let i = 0; i < numPositions; i++) {
@@ -602,8 +739,16 @@ class ObjectFinder {
             }
         }
 
-        const targetPos = parseFloat(this.elements.targetPosition.value);
-        this.config.targetSegment = Math.round(targetPos / this.POKER_CARD_WIDTH);
+        // Save all object names (linear mode)
+        const numObjects = parseInt(this.elements.numObjects.value);
+        this.config.objectNames = [];
+        for (let i = 0; i < numObjects; i++) {
+            const objectInput = document.getElementById(`object${i}`);
+            if (objectInput) {
+                this.config.objectNames.push(objectInput.value || `Objeto ${i + 1}`);
+            }
+        }
+        this.config.targetObjectIndex = parseInt(this.elements.targetObjectIndex.value);
 
         this.config.tolerance = parseInt(this.elements.tolerance.value);
         this.config.sensitivity = this.elements.sensitivity.value;
